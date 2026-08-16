@@ -121,7 +121,7 @@ def score_password(password: str) -> dict:
         "suggestions": suggestions or ["Looks okay, but consider using a passphrase for extra safety."]
     }
 
-# Example usage
+# Example usage mango
 if __name__ == "__main__":
     test_passwords = [
         "password", "P@ssw0rd", "correcthorsebatterystaple",
