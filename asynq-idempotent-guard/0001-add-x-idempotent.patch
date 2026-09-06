@@ -1,0 +1,383 @@
+From c355fc6a0c9d14e724d18d27ce54e9628f119113 Mon Sep 17 00:00:00 2001
+From: dev <dev@example.com>
+Date: Sun, 6 Sep 2026 06:32:25 +0000
+Subject: [PATCH] Add x/idempotent: at-most-once execution guard for
+ asynq.Handler
+
+---
+ x/idempotent/idempotent.go      | 106 ++++++++++++++
+ x/idempotent/idempotent_test.go | 249 ++++++++++++++++++++++++++++++++
+ 2 files changed, 355 insertions(+)
+ create mode 100644 x/idempotent/idempotent.go
+ create mode 100644 x/idempotent/idempotent_test.go
+
+diff --git a/x/idempotent/idempotent.go b/x/idempotent/idempotent.go
+new file mode 100644
+index 0000000..f0eab4a
+--- /dev/null
++++ b/x/idempotent/idempotent.go
+@@ -0,0 +1,106 @@
++// Copyright 2020 Kentaro Hibino. All rights reserved.
++// Use of this source code is governed by a MIT license
++// that can be found in the LICENSE file.
++
++// Package idempotent guards an asynq.Handler against re-running its side
++// effect when a task is redelivered after already completing once.
++//
++// asynq guarantees at-least-once execution: if a worker process finishes a
++// task's side effect but dies before asynq records the task as done (a
++// crash, an OOM kill, a missed heartbeat), the task's lease expires and the
++// recoverer redelivers it -- possibly to a different worker process -- which
++// runs the handler again. The Unique option does not cover this: it
++// deduplicates tasks at enqueue time by type+payload+queue, not repeat
++// executions of one already-enqueued task instance. Guard closes that gap
++// for handlers whose side effects are not naturally safe to repeat.
++package idempotent
++
++import (
++	"context"
++	"fmt"
++	"time"
++
++	"github.com/hibiken/asynq"
++	asynqcontext "github.com/hibiken/asynq/internal/context"
++	"github.com/redis/go-redis/v9"
++)
++
++const (
++	statusInProgress = "in_progress"
++	statusDone       = "done"
++)
++
++// Guard deduplicates task execution across redeliveries of the same task ID,
++// using a Redis-backed ledger shared by every asynq server on the broker --
++// the same failure mode Guard closes can hand a redelivered task to a
++// different process than the one that ran it the first time.
++type Guard struct {
++	rc  redis.UniversalClient
++	ttl time.Duration
++}
++
++// NewGuard creates a Guard backed by the given redis connection. ttl bounds
++// both how long a claim may be held before it's considered abandoned and how
++// long a completed task is remembered to dedupe a late redelivery; it should
++// comfortably exceed the wrapped handler's expected processing time.
++func NewGuard(rco asynq.RedisConnOpt, ttl time.Duration) *Guard {
++	rc, ok := rco.MakeRedisClient().(redis.UniversalClient)
++	if !ok {
++		panic(fmt.Sprintf("idempotent.NewGuard: unsupported RedisConnOpt type %T", rco))
++	}
++	if ttl <= 0 {
++		panic("idempotent.NewGuard: ttl must be positive")
++	}
++	return &Guard{rc: rc, ttl: ttl}
++}
++
++// Close closes the connection to redis.
++func (g *Guard) Close() error {
++	return g.rc.Close()
++}
++
++// Wrap returns a Handler that runs next at most once per task ID: a
++// redelivery of a task next already completed is skipped rather than
++// re-run, and a redelivery that arrives while the first attempt is still in
++// flight is bounced back to asynq's own retry/backoff instead of running
++// concurrently with it.
++func (g *Guard) Wrap(next asynq.Handler) asynq.Handler {
++	return asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
++		id, ok := asynqcontext.GetTaskID(ctx)
++		if !ok {
++			return fmt.Errorf("idempotent: provided context is missing task ID value")
++		}
++		key := ledgerKey(id)
++
++		claimed, err := g.rc.SetNX(ctx, key, statusInProgress, g.ttl).Result()
++		if err != nil {
++			return fmt.Errorf("idempotent: redis command failed: %w", err)
++		}
++		if !claimed {
++			status, err := g.rc.Get(ctx, key).Result()
++			if err != nil {
++				return fmt.Errorf("idempotent: redis command failed: %w", err)
++			}
++			if status == statusDone {
++				return nil // already completed by a previous delivery; nothing to do.
++			}
++			return fmt.Errorf("idempotent: task %s is already being processed", id)
++		}
++
++		if err := next.ProcessTask(ctx, t); err != nil {
++			if delErr := g.rc.Del(ctx, key).Err(); delErr != nil {
++				return fmt.Errorf("idempotent: handler error: %w (also failed to release claim: %v)", err, delErr)
++			}
++			return err
++		}
++
++		if err := g.rc.Set(ctx, key, statusDone, g.ttl).Err(); err != nil {
++			return fmt.Errorf("idempotent: redis command failed: %w", err)
++		}
++		return nil
++	})
++}
++
++func ledgerKey(taskID string) string {
++	return "asynq:idempotent:" + taskID
++}
+diff --git a/x/idempotent/idempotent_test.go b/x/idempotent/idempotent_test.go
+new file mode 100644
+index 0000000..62ce267
+--- /dev/null
++++ b/x/idempotent/idempotent_test.go
+@@ -0,0 +1,249 @@
++package idempotent
++
++import (
++	"context"
++	"flag"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/google/uuid"
++	"github.com/hibiken/asynq"
++	"github.com/hibiken/asynq/internal/base"
++	asynqcontext "github.com/hibiken/asynq/internal/context"
++	"github.com/redis/go-redis/v9"
++)
++
++var (
++	redisAddr string
++	redisDB   int
++)
++
++func init() {
++	flag.StringVar(&redisAddr, "redis_addr", "localhost:6379", "redis address to use in testing")
++	flag.IntVar(&redisDB, "redis_db", 15, "redis db number to use in testing")
++}
++
++func getRedisConnOpt(tb testing.TB) asynq.RedisConnOpt {
++	tb.Helper()
++	return asynq.RedisClientOpt{Addr: redisAddr, DB: redisDB}
++}
++
++func newTestContext(tb testing.TB, taskID string) (context.Context, context.CancelFunc) {
++	tb.Helper()
++	return asynqcontext.New(context.Background(), &base.TaskMessage{
++		ID:    taskID,
++		Type:  "test_task",
++		Queue: "default",
++	}, time.Now().Add(time.Minute))
++}
++
++func TestNewGuard_Panics(t *testing.T) {
++	tests := []struct {
++		desc      string
++		connOpt   asynq.RedisConnOpt
++		ttl       time.Duration
++		wantPanic string
++	}{
++		{
++			desc:      "unsupported RedisConnOpt",
++			connOpt:   &badConnOpt{},
++			ttl:       time.Minute,
++			wantPanic: "idempotent.NewGuard: unsupported RedisConnOpt type *idempotent.badConnOpt",
++		},
++		{
++			desc:      "zero ttl",
++			ttl:       0,
++			wantPanic: "idempotent.NewGuard: ttl must be positive",
++		},
++		{
++			desc:      "negative ttl",
++			ttl:       -time.Second,
++			wantPanic: "idempotent.NewGuard: ttl must be positive",
++		},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.desc, func(t *testing.T) {
++			defer func() {
++				r := recover()
++				if r == nil {
++					t.Fatalf("%s: NewGuard did not panic, want panic %q", tt.desc, tt.wantPanic)
++				}
++				if r.(string) != tt.wantPanic {
++					t.Errorf("%s: NewGuard panicked with %q, want %q", tt.desc, r, tt.wantPanic)
++				}
++			}()
++			opt := tt.connOpt
++			if opt == nil {
++				opt = getRedisConnOpt(t)
++			}
++			NewGuard(opt, tt.ttl)
++		})
++	}
++}
++
++func TestGuard_Wrap_MissingTaskID(t *testing.T) {
++	opt := getRedisConnOpt(t)
++	guard := NewGuard(opt, time.Minute)
++	defer guard.Close()
++
++	var runs int32
++	wrapped := guard.Wrap(asynq.HandlerFunc(func(ctx context.Context, task *asynq.Task) error {
++		atomic.AddInt32(&runs, 1)
++		return nil
++	}))
++
++	err := wrapped.ProcessTask(context.Background(), asynq.NewTask("test_task", nil))
++	wantErr := "idempotent: provided context is missing task ID value"
++	if err == nil || err.Error() != wantErr {
++		t.Fatalf("ProcessTask() error = %v, want %q", err, wantErr)
++	}
++	if got := atomic.LoadInt32(&runs); got != 0 {
++		t.Fatalf("handler ran %d times, want 0", got)
++	}
++}
++
++// TestGuard_Wrap_SkipsCompletedRedelivery reproduces the bug directly: a task
++// completes, and the *same* task ID is delivered again (asynq's own
++// contract after a lease-expiry retry) before proving the fix closes it.
++func TestGuard_Wrap_SkipsCompletedRedelivery(t *testing.T) {
++	opt := getRedisConnOpt(t)
++	rc := opt.MakeRedisClient().(redis.UniversalClient)
++	defer rc.Close()
++
++	taskID := uuid.NewString()
++	rc.Del(context.Background(), ledgerKey(taskID))
++
++	guard := NewGuard(opt, time.Minute)
++	defer guard.Close()
++
++	var runs int32
++	wrapped := guard.Wrap(asynq.HandlerFunc(func(ctx context.Context, task *asynq.Task) error {
++		atomic.AddInt32(&runs, 1)
++		return nil
++	}))
++
++	ctx, cancel := newTestContext(t, taskID)
++	defer cancel()
++	task := asynq.NewTask("test_task", nil)
++
++	if err := wrapped.ProcessTask(ctx, task); err != nil {
++		t.Fatalf("1st delivery: ProcessTask() error = %v, want nil", err)
++	}
++	if got := atomic.LoadInt32(&runs); got != 1 {
++		t.Fatalf("after 1st delivery: handler ran %d times, want 1", got)
++	}
++
++	// Simulate the broker redelivering the identical task after the first
++	// worker's lease expired without a done/ack ever landing.
++	if err := wrapped.ProcessTask(ctx, task); err != nil {
++		t.Fatalf("2nd delivery (redelivery): ProcessTask() error = %v, want nil", err)
++	}
++	if got := atomic.LoadInt32(&runs); got != 1 {
++		t.Fatalf("after redelivery: handler ran %d times, want exactly 1 (this is the bug Guard closes)", got)
++	}
++}
++
++// TestGuard_Wrap_ConcurrentRedelivery exercises the harder race: a
++// redelivery of the same task ID arrives while the first attempt is still
++// executing. Both calls share one Guard and one task ID, so this can only
++// pass if the claim is truly atomic, not because two independent handlers
++// each got their own bookkeeping. No sleeps: ordering is driven entirely by
++// channels.
++func TestGuard_Wrap_ConcurrentRedelivery(t *testing.T) {
++	opt := getRedisConnOpt(t)
++	rc := opt.MakeRedisClient().(redis.UniversalClient)
++	defer rc.Close()
++
++	taskID := uuid.NewString()
++	rc.Del(context.Background(), ledgerKey(taskID))
++
++	guard := NewGuard(opt, time.Minute)
++	defer guard.Close()
++
++	var runs int32
++	claimed := make(chan struct{})
++	proceed := make(chan struct{})
++	wrapped := guard.Wrap(asynq.HandlerFunc(func(ctx context.Context, task *asynq.Task) error {
++		atomic.AddInt32(&runs, 1)
++		close(claimed)
++		<-proceed
++		return nil
++	}))
++
++	ctx, cancel := newTestContext(t, taskID)
++	defer cancel()
++	task := asynq.NewTask("test_task", nil)
++
++	firstErrCh := make(chan error, 1)
++	go func() { firstErrCh <- wrapped.ProcessTask(ctx, task) }()
++
++	<-claimed // first delivery genuinely holds the claim before we race it
++
++	secondErr := wrapped.ProcessTask(ctx, task)
++	if secondErr == nil {
++		t.Fatal("concurrent redelivery: ProcessTask() error = nil, want error while first attempt is in flight")
++	}
++	if got := atomic.LoadInt32(&runs); got != 1 {
++		t.Fatalf("while first attempt in flight: handler ran %d times, want exactly 1", got)
++	}
++
++	close(proceed)
++	if err := <-firstErrCh; err != nil {
++		t.Fatalf("first delivery: ProcessTask() error = %v, want nil", err)
++	}
++	if got := atomic.LoadInt32(&runs); got != 1 {
++		t.Fatalf("final: handler ran %d times, want exactly 1", got)
++	}
++}
++
++// TestGuard_Wrap_ReleasesClaimOnFailure proves Guard does not turn a
++// legitimate task failure into a permanent skip: asynq's normal retry path
++// must still be able to run the handler again.
++func TestGuard_Wrap_ReleasesClaimOnFailure(t *testing.T) {
++	opt := getRedisConnOpt(t)
++	rc := opt.MakeRedisClient().(redis.UniversalClient)
++	defer rc.Close()
++
++	taskID := uuid.NewString()
++	rc.Del(context.Background(), ledgerKey(taskID))
++
++	guard := NewGuard(opt, time.Minute)
++	defer guard.Close()
++
++	var runs int32
++	wrapped := guard.Wrap(asynq.HandlerFunc(func(ctx context.Context, task *asynq.Task) error {
++		n := atomic.AddInt32(&runs, 1)
++		if n == 1 {
++			return errFirstAttempt
++		}
++		return nil
++	}))
++
++	ctx, cancel := newTestContext(t, taskID)
++	defer cancel()
++	task := asynq.NewTask("test_task", nil)
++
++	if err := wrapped.ProcessTask(ctx, task); err != errFirstAttempt {
++		t.Fatalf("1st attempt: ProcessTask() error = %v, want %v", err, errFirstAttempt)
++	}
++
++	// asynq's retry path redelivers the same task ID after a real failure.
++	if err := wrapped.ProcessTask(ctx, task); err != nil {
++		t.Fatalf("retry after failure: ProcessTask() error = %v, want nil", err)
++	}
++	if got := atomic.LoadInt32(&runs); got != 2 {
++		t.Fatalf("handler ran %d times, want exactly 2 (failure must not block a legitimate retry)", got)
++	}
++}
++
++var errFirstAttempt = &testError{"simulated failure on first attempt"}
++
++type testError struct{ msg string }
++
++func (e *testError) Error() string { return e.msg }
++
++type badConnOpt struct{}
++
++func (b *badConnOpt) MakeRedisClient() interface{} { return nil }
+-- 
+2.43.0
+
