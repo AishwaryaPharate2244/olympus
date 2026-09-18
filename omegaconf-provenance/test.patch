@@ -84,18 +84,19 @@ index 0000000..4d42a5c
 +exit $RESULT
 diff --git a/test_provenance_c8081c.py b/test_provenance_c8081c.py
 new file mode 100644
-index 0000000..87a98e1
+index 0000000..06d52ca
 --- /dev/null
 +++ b/test_provenance_c8081c.py
-@@ -0,0 +1,623 @@
+@@ -0,0 +1,788 @@
 +import copy
++import os
 +import pickle
 +from dataclasses import dataclass, field
-+from typing import Dict, List, Tuple, Union
++from typing import Dict, List, Optional, Tuple, Union
 +
 +import attr
 +
-+from omegaconf import OmegaConf, Provenance
++from omegaconf import MISSING, OmegaConf, Provenance
 +
 +
 +@dataclass
@@ -128,6 +129,11 @@ index 0000000..87a98e1
 +
 +
 +@dataclass
++class OuterWithUnionConf_c8081c:
++    inner: UnionStructConf_c8081c = field(default_factory=UnionStructConf_c8081c)
++
++
++@dataclass
 +class TupleConf_c8081c:
 +    t: Tuple[int, int] = (1, 2)
 +
@@ -135,6 +141,31 @@ index 0000000..87a98e1
 +@dataclass
 +class DictFieldConf_c8081c:
 +    d: Dict[str, int] = field(default_factory=lambda: {"a": 1})
++
++
++@dataclass
++class ListFieldConf_c8081c:
++    vals: List[int] = field(default_factory=lambda: [1, 2])
++
++
++@dataclass
++class OptNestedConf_c8081c:
++    inner: Optional[Inner_c8081c] = None
++
++
++@dataclass
++class OptListConf_c8081c:
++    vals: Optional[List[int]] = None
++
++
++@dataclass
++class DictStructFieldConf_c8081c:
++    d: Dict[str, Inner_c8081c] = field(default_factory=dict)
++
++
++@dataclass
++class MissingNestedConf_c8081c:
++    inner: Inner_c8081c = MISSING
 +
 +
 +def test_yaml_scalar_position_c8081c():
@@ -229,12 +260,14 @@ index 0000000..87a98e1
 +    )
 +
 +
-+def test_load_from_file_records_absolute_path_c8081c(tmp_path):
++def test_load_from_file_records_absolute_path_c8081c(tmp_path, monkeypatch):
 +    p = tmp_path / "cfg.yaml"
 +    p.write_text("a:\n  b: 1\n")
-+    cfg = OmegaConf.load(p)
++    monkeypatch.chdir(tmp_path)
++    cfg = OmegaConf.load("cfg.yaml")
 +    prov = OmegaConf.get_provenance(cfg, "a.b")
 +    assert prov.kind == "file"
++    assert os.path.isabs(prov.source)
 +    assert prov.source == str(p)
 +    assert prov.line == 2
 +    assert prov.column == 6
@@ -343,11 +376,14 @@ index 0000000..87a98e1
 +def test_merge_container_keeps_own_leaf_takes_source_c8081c():
 +    base = OmegaConf.create("a:\n  qqqqqqqqqqqqq: 1\n  cccccccccccc: 2\n")
 +    override = OmegaConf.create(
-+        "a:\n  eeeeeeeeeeeeeeeeeeeee: true\n  qqqqqqqqqqqqq: 10\n"
++        "_pad_c8081c: 0\na:\n  eeeeeeeeeeeeeeeeeeeee: true\n  qqqqqqqqqqqqq: 10\n"
 +    )
 +    merged = OmegaConf.merge(base, override)
 +    assert merged.a.qqqqqqqqqqqqq == 10
 +    assert OmegaConf.get_provenance(merged, "a") == OmegaConf.get_provenance(base, "a")
++    assert OmegaConf.get_provenance(merged, "a") != OmegaConf.get_provenance(
++        override, "a"
++    )
 +    assert OmegaConf.get_provenance(
 +        merged, "a.cccccccccccc"
 +    ) == OmegaConf.get_provenance(base, "a.cccccccccccc")
@@ -355,20 +391,29 @@ index 0000000..87a98e1
 +        merged, "a.qqqqqqqqqqqqq"
 +    ) == OmegaConf.get_provenance(override, "a.qqqqqqqqqqqqq")
 +    assert OmegaConf.get_provenance(
++        merged, "a.qqqqqqqqqqqqq"
++    ) != OmegaConf.get_provenance(base, "a.qqqqqqqqqqqqq")
++    assert OmegaConf.get_provenance(
 +        merged, "a.eeeeeeeeeeeeeeeeeeeee"
 +    ) == OmegaConf.get_provenance(override, "a.eeeeeeeeeeeeeeeeeeeee")
 +
 +
 +def test_merge_list_replaced_wholesale_takes_source_c8081c():
 +    base = OmegaConf.create("b: [1, 2]\n")
-+    override = OmegaConf.create("b: [10, 20, 30]\n")
++    override = OmegaConf.create("_pad_c8081c: 0\nb: [10, 20, 30]\n")
 +    merged = OmegaConf.merge(base, override)
 +    assert list(merged.b) == [10, 20, 30]
 +    assert OmegaConf.get_provenance(merged, "b") == OmegaConf.get_provenance(
 +        override, "b"
 +    )
++    assert OmegaConf.get_provenance(merged, "b") != OmegaConf.get_provenance(
++        base, "b"
++    )
 +    assert OmegaConf.get_provenance(merged, "b[0]") == OmegaConf.get_provenance(
 +        override, "b[0]"
++    )
++    assert OmegaConf.get_provenance(merged, "b[0]") != OmegaConf.get_provenance(
++        base, "b[0]"
 +    )
 +    assert OmegaConf.get_provenance(merged, "b[2]") == OmegaConf.get_provenance(
 +        override, "b[2]"
@@ -377,11 +422,17 @@ index 0000000..87a98e1
 +
 +def test_merge_container_vs_list_asymmetry_c8081c():
 +    base = OmegaConf.create("d:\n  k: 1\nl: [1]\n")
-+    override = OmegaConf.create("d:\n  m: 2\nl: [9]\n")
++    override = OmegaConf.create("_pad_c8081c: 0\nd:\n  m: 2\nl: [9]\n")
 +    merged = OmegaConf.merge(base, override)
 +    assert OmegaConf.get_provenance(merged, "d") == OmegaConf.get_provenance(base, "d")
++    assert OmegaConf.get_provenance(merged, "d") != OmegaConf.get_provenance(
++        override, "d"
++    )
 +    assert OmegaConf.get_provenance(merged, "l") == OmegaConf.get_provenance(
 +        override, "l"
++    )
++    assert OmegaConf.get_provenance(merged, "l") != OmegaConf.get_provenance(
++        base, "l"
 +    )
 +
 +
@@ -398,6 +449,14 @@ index 0000000..87a98e1
 +    )
 +
 +
++def test_merge_missing_source_leaves_typed_leaf_unchanged_c8081c():
++    base = OmegaConf.structured(MyConf_c8081c)
++    override = OmegaConf.create("a: ???\n")
++    merged = OmegaConf.merge(base, override)
++    assert merged.a == 5
++    assert OmegaConf.get_provenance(merged, "a") == OmegaConf.get_provenance(base, "a")
++
++
 +def test_merge_new_key_takes_source_c8081c():
 +    base = OmegaConf.create("a: 1\n")
 +    override = OmegaConf.create("a: 1\nb: 2\n")
@@ -409,10 +468,13 @@ index 0000000..87a98e1
 +
 +def test_merge_missing_source_leaves_target_unchanged_c8081c():
 +    base = OmegaConf.create("a: 5\n")
-+    override = OmegaConf.create("a: ???\n")
++    override = OmegaConf.create("_pad_c8081c: 0\na: ???\n")
 +    merged = OmegaConf.merge(base, override)
 +    assert merged.a == 5
 +    assert OmegaConf.get_provenance(merged, "a") == OmegaConf.get_provenance(base, "a")
++    assert OmegaConf.get_provenance(merged, "a") != OmegaConf.get_provenance(
++        override, "a"
++    )
 +
 +
 +def test_merge_plain_dict_source_counts_as_python_c8081c():
@@ -449,38 +511,141 @@ index 0000000..87a98e1
 +
 +def test_merge_three_way_sequential_c8081c():
 +    a = OmegaConf.create("x:\n  aaaaaaaaaaaaaaaaaaaaa: 1\n")
-+    b = OmegaConf.create("x:\n  bbbbbbbbbbbbbbbbbbbbb: 2\n")
-+    c = OmegaConf.create("x:\n  ccccccccccccccccccccc: 3\n")
++    b = OmegaConf.create("_pad1_c8081c: 0\nx:\n  bbbbbbbbbbbbbbbbbbbbb: 2\n")
++    c = OmegaConf.create(
++        "_pad1_c8081c: 0\n_pad2_c8081c: 0\nx:\n  ccccccccccccccccccccc: 3\n"
++    )
 +    merged = OmegaConf.merge(a, b, c)
-+    assert OmegaConf.get_provenance(
-+        merged, "x.aaaaaaaaaaaaaaaaaaaaa"
-+    ) == OmegaConf.get_provenance(a, "x.aaaaaaaaaaaaaaaaaaaaa")
-+    assert OmegaConf.get_provenance(
-+        merged, "x.bbbbbbbbbbbbbbbbbbbbb"
-+    ) == OmegaConf.get_provenance(b, "x.bbbbbbbbbbbbbbbbbbbbb")
-+    assert OmegaConf.get_provenance(
-+        merged, "x.ccccccccccccccccccccc"
-+    ) == OmegaConf.get_provenance(c, "x.ccccccccccccccccccccc")
++    prov_a = OmegaConf.get_provenance(merged, "x.aaaaaaaaaaaaaaaaaaaaa")
++    prov_b = OmegaConf.get_provenance(merged, "x.bbbbbbbbbbbbbbbbbbbbb")
++    prov_c = OmegaConf.get_provenance(merged, "x.ccccccccccccccccccccc")
++    assert prov_a == OmegaConf.get_provenance(a, "x.aaaaaaaaaaaaaaaaaaaaa")
++    assert prov_b == OmegaConf.get_provenance(b, "x.bbbbbbbbbbbbbbbbbbbbb")
++    assert prov_c == OmegaConf.get_provenance(c, "x.ccccccccccccccccccccc")
++    assert len({prov_a, prov_b, prov_c}) == 3
 +
 +
 +def test_unsafe_merge_matches_merge_semantics_c8081c():
 +    base = OmegaConf.create("a:\n  qqqqqqqqqqqqq: 1\n  cccccccccccc: 2\n")
 +    override = OmegaConf.create(
-+        "a:\n  eeeeeeeeeeeeeeeeeeeee: true\n  qqqqqqqqqqqqq: 10\n"
++        "_pad_c8081c: 0\na:\n  eeeeeeeeeeeeeeeeeeeee: true\n  qqqqqqqqqqqqq: 10\n"
 +    )
 +    base_c = OmegaConf.get_provenance(base, "a.cccccccccccc")
++    base_a = OmegaConf.get_provenance(base, "a")
 +    override_q = OmegaConf.get_provenance(override, "a.qqqqqqqqqqqqq")
++    override_a = OmegaConf.get_provenance(override, "a")
++    assert base_a != override_a
 +    merged = OmegaConf.unsafe_merge(base, override)
 +    assert OmegaConf.get_provenance(merged, "a.cccccccccccc") == base_c
 +    assert OmegaConf.get_provenance(merged, "a.qqqqqqqqqqqqq") == override_q
++    assert OmegaConf.get_provenance(merged, "a") == base_a
 +
 +
 +def test_merge_with_instance_method_c8081c():
 +    base = OmegaConf.create("x: [1, 2]\n")
-+    override = OmegaConf.create("x: [10, 20, 30]\n")
++    original_x0 = OmegaConf.get_provenance(base, "x[0]")
++    override = OmegaConf.create("_pad_c8081c: 0\nx: [10, 20, 30]\n")
 +    expected = OmegaConf.get_provenance(override, "x[0]")
++    assert original_x0 != expected
 +    base.merge_with(override)
 +    assert OmegaConf.get_provenance(base, "x[0]") == expected
++
++
++def test_merge_container_replaced_by_null_takes_source_provenance_c8081c():
++    base = OmegaConf.create({"inner": {"z": 1}})
++    override = OmegaConf.structured(OptNestedConf_c8081c)
++    merged = OmegaConf.merge(base, override)
++    assert merged.inner is None
++    assert OmegaConf.get_provenance(merged, "inner") == OmegaConf.get_provenance(
++        override, "inner"
++    )
++    assert OmegaConf.get_provenance(merged, "inner") != OmegaConf.get_provenance(
++        base, "inner"
++    )
++
++
++def test_merge_list_replaced_by_null_takes_source_provenance_c8081c():
++    base = OmegaConf.create({"vals": [1, 2]})
++    override = OmegaConf.structured(OptListConf_c8081c)
++    merged = OmegaConf.merge(base, override)
++    assert merged.vals is None
++    assert OmegaConf.get_provenance(merged, "vals") == OmegaConf.get_provenance(
++        override, "vals"
++    )
++    assert OmegaConf.get_provenance(merged, "vals") != OmegaConf.get_provenance(
++        base, "vals"
++    )
++
++
++def test_merge_list_interpolation_source_takes_source_provenance_c8081c():
++    base = OmegaConf.create("other: [9, 9]\n")
++    base.merge_with(OmegaConf.structured(ListFieldConf_c8081c))
++    override = OmegaConf.structured(ListFieldConf_c8081c)
++    override.vals = "${other}"
++    expected = OmegaConf.get_provenance(override, "vals")
++    original = OmegaConf.get_provenance(base, "vals")
++    assert expected != original
++    merged = OmegaConf.merge(base, override)
++    assert list(merged.vals) == [9, 9]
++    assert OmegaConf.get_provenance(merged, "vals") == expected
++
++
++def test_merge_none_container_filled_by_source_takes_source_provenance_c8081c():
++    base = OmegaConf.structured(OptNestedConf_c8081c)
++    override = OmegaConf.create("inner:\n  z: 5\n")
++    merged = OmegaConf.merge(base, override)
++    assert merged.inner.z == 5
++    assert OmegaConf.get_provenance(merged, "inner") == OmegaConf.get_provenance(
++        override, "inner"
++    )
++
++
++def test_merge_missing_structured_field_filled_by_source_takes_source_provenance_c8081c():
++    base = OmegaConf.structured(MissingNestedConf_c8081c)
++    override = OmegaConf.create("inner:\n  z: 5\n")
++    merged = OmegaConf.merge(base, override)
++    assert merged.inner.z == 5
++    assert OmegaConf.get_provenance(merged, "inner") == OmegaConf.get_provenance(
++        override, "inner"
++    )
++
++
++def test_merge_new_structured_typed_key_takes_source_provenance_c8081c():
++    base = OmegaConf.structured(DictStructFieldConf_c8081c)
++    override = OmegaConf.create("d:\n  k1:\n    z: 5\n")
++    merged = OmegaConf.merge(base, override)
++    assert merged.d.k1.z == 5
++    assert OmegaConf.get_provenance(merged, "d.k1") == OmegaConf.get_provenance(
++        override, "d.k1"
++    )
++
++
++def test_dotlist_merge_into_existing_union_field_c8081c():
++    cfg = OmegaConf.structured(UnionStructConf_c8081c)
++    cfg.merge_with_dotlist(["v={z: 77}"])
++    assert cfg.v.z == 77
++    assert OmegaConf.get_provenance(cfg, "v").kind == "dotlist"
++    assert OmegaConf.get_provenance(cfg, "v").source == "v={z: 77}"
++    assert OmegaConf.get_provenance(cfg, "v.z").kind == "dotlist"
++    assert OmegaConf.get_provenance(cfg, "v.z").source == "v={z: 77}"
++
++
++def test_dotlist_merge_stamping_descends_through_nested_union_c8081c():
++    cfg = OmegaConf.structured(OuterWithUnionConf_c8081c)
++    cfg.merge_with_dotlist(["inner={v: {z: 42}}"])
++    assert cfg.inner.v.z == 42
++    assert OmegaConf.get_provenance(cfg, "inner.v").kind == "dotlist"
++    assert OmegaConf.get_provenance(cfg, "inner.v.z").kind == "dotlist"
++    assert (
++        OmegaConf.get_provenance(cfg, "inner.v.z").source
++        == "inner={v: {z: 42}}"
++    )
++
++
++def test_iter_provenance_null_structured_container_not_walked_c8081c():
++    cfg = OmegaConf.structured(OptNestedConf_c8081c)
++    children = [p for p, _ in OmegaConf.iter_provenance(cfg, "inner")]
++    assert children == ["inner"]
 +
 +
 +def test_assignment_overwrites_loaded_provenance_c8081c():

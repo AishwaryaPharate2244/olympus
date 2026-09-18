@@ -15,7 +15,7 @@ a fixture that specifically targets that interaction (see "the named wall" below
 
 ## Minimal-LOC-floor argument
 
-Reference solution: 356 meaningful lines (per the Stage 2 counting script) across 7
+Reference solution: 359 meaningful lines (per the Stage 2 counting script) across 7
 files (`omegaconf/base.py`, `omegaconf/_yaml.py`, `omegaconf/omegaconf.py`,
 `omegaconf/basecontainer.py`, `omegaconf/_utils.py`, `omegaconf/_impl.py`,
 `omegaconf/__init__.py`). This clears the 350-line / 3-file floor with headroom in both
@@ -71,14 +71,21 @@ Sub-behavior enumeration and where the minimal version of each must live:
 
 Total: 380 estimated / 360 collapsed after folding rows 2+8 into one YAML-attribution
 path and rows 5+6 around a shared stamping helper, matching the Stage 1 estimate. The
-356-line reference lands within a few lines of that collapsed floor while also fixing a
+359-line reference lands within a few lines of that collapsed floor while also fixing a
 correctness gap the floor estimate did not anticipate: none of the four tree-walking
 helpers (position stamping, tree-wide stamping, provenance iteration, and the
 annotated-container export) originally descended into a value sitting behind a
 union-typed field, because they used the container's raw child accessor instead of the
 one path in the codebase that already unwraps a union wrapper. Fixing that consistently
-across all four walkers is included in the 356 and is real, tested behavior (the hidden
-suite exercises Union-typed structured fields explicitly), not padding.
+across all four walkers is included in the line count. A Stage 3 audit mutant sweep
+found that this is real, tested, load-bearing behavior for two of the four walkers
+(provenance iteration and the annotated-container export, both killed pre-existing by
+the hidden suite) and reachable-but-untested for a third (tree-wide stamping, closed by
+an added fixture during the audit); the fourth (position stamping) is unreachable in
+practice, since `create()`/`load()` only ever walk trees built straight from YAML text,
+which never contains a union-typed node before a separate structured-config step
+attaches one. The unwrap call there is kept for symmetry with the other three walkers
+but is not exercised by any hidden test.
 
 Collapse questions, answered against the real code:
 - What can be dropped? Nothing. Each row above has a dedicated fixture in the hidden
@@ -145,6 +152,11 @@ Disclosed in problem.md:
 - The full merge policy in prose (Choice points D1-D10 from the Stage 1 record), since
   which side of a merge "wins" a record is exactly the kind of undiscoverable author
   contract Stage 2 section 7.3 requires disclosing.
+- That a YAML-file load reports the file's path in absolute form. Added during the
+  Stage 3 audit: the repo's own design note treats absolute-vs-relative-vs-opaque
+  source identifiers as an explicitly open question (see "Privacy / information
+  exposure" in the design note), so this is not derivable from the repo and was an
+  undisclosed contract until this pass.
 
 Not disclosed, and left as real work: how positions are actually captured during YAML
 parsing (before or after alias resolution, where in the loader the hook belongs), how
@@ -174,7 +186,7 @@ collects and passes at base, matching upstream CI's own dependency set for runni
 ## G1-G12 verdicts, carried from the lock record and updated with what the build revealed
 
 - G1 PASS. Estimated 380 / collapsed 360 meaningful lines at lock time; the built
-  reference lands at 356, confirming the collapsed estimate and clearing the 350-line
+  reference lands at 359, confirming the collapsed estimate and clearing the 350-line
   floor with room (7 files against a 3-file floor).
 - G2 PASS. The six seams named in the lock record held exactly as scoped; no seventh
   seam was discovered during the build.
@@ -197,9 +209,15 @@ collects and passes at base, matching upstream CI's own dependency set for runni
   time: all tree-walking helper functions (position stamping, tree-wide stamping,
   provenance iteration, and the annotated-container export) needed a shared
   union-unwrapping fix, discovered by a targeted union-typed-field fixture during
-  development. Fixing one such helper without fixing the others left three of the four
-  silently stopping at a union-wrapped field; this interaction is now itself part of
-  the crosscutting difficulty and covered by dedicated fixtures.
+  development. A Stage 3 audit mutant sweep found that two of the four walkers
+  (provenance iteration, annotated-container export) were already independently
+  covered, that tree-wide stamping was reachable but untested (closed by an added
+  fixture: a dotlist merge into an existing union-typed field, nested two levels
+  deep so the recursive walk -- not the pre-dereferencing top-level call -- is what
+  is exercised), and that position stamping's unwrap is unreachable through any
+  public entry point, since YAML-text creation never produces a union-typed node.
+  The reference keeps that fourth unwrap call for symmetry with the other three
+  walkers; it is documented here as untested rather than left as an unverified claim.
 - G9 PASS. Disclosure is limited to the record shape, the four API names, the five
   kind words, and the merge policy in prose; every mechanism listed under "the named
   wall" remains unstated and unimplemented until the solver writes it.
@@ -211,6 +229,46 @@ collects and passes at base, matching upstream CI's own dependency set for runni
 - G11 PASS. All ten choice points (D1-D10) from the lock record are both implemented
   and stated in problem.md; none were dropped or added without disclosure during the
   build.
+## Stage 3 audit addendum
+
+A one-shot audit (Gates A-K) found and fixed, at the source, before re-generating both
+patches and re-running the full clean-room sequence:
+
+- A real reference bug, not just a test gap: merging a MISSING source into an untyped
+  ("AnyNode") destination copied the missing source's own provenance onto the
+  destination alongside its value, instead of leaving the destination's record alone
+  (`basecontainer.py`, the `isinstance(dest_node, AnyNode)` branch of `_map_merge`'s
+  per-key loop). This violates the stated "a missing source leaves the target's record
+  unchanged" rule for the single most common case (an untyped scalar). Fixed by
+  stamping the destination's own provenance onto the value-only copy, using the same
+  shallow-copy-then-copy-the-metadata idiom the codebase already uses elsewhere
+  (`__copy__`). The bug was masked in the original hidden suite by a fixture collision:
+  the base and override YAML texts for the relevant test put the compared key at the
+  identical line/column, so the wrong answer and the right answer were value-equal by
+  coincidence.
+- A systemic fixture-collision defect across seven merge-related tests: base/override
+  YAML fixtures with identical structural shape produced value-equal `Provenance`
+  records regardless of which side's record a given implementation actually picked,
+  silently defeating the "clause C25 / container keeps its own record" and "list
+  wholesale replace" discrimination. Fixed by padding one side's fixture text so
+  positions can never coincide, plus added explicit `!=` assertions against the
+  losing side as a second line of defense.
+- Six real test-coverage gaps closed with new fixtures: a null-valued merge source and
+  destination at both the dict and list container level; a MISSING (not just None)
+  structured-config-typed field filled by merge; a new key added during merge whose
+  destination has a structured-config element type; a dotlist entry merging into an
+  already-existing typed (including union-typed) destination; and a MISSING typed
+  (non-AnyNode) leaf being correctly left unchanged.
+- One undisclosed contract closed: `load()`'s absolute-path behavior (see the
+  disclosure list above).
+- One overstated claim in this file corrected: the union-unwrap fix is verified
+  load-bearing for two of the four tree-walking helpers, reachable-but-was-untested
+  for a third (now fixed), and unreachable through any public API for the fourth (now
+  documented as such rather than claimed as tested).
+
+Full detail, evidence, and the mutant-by-mutant record are in
+`STAGE3-audit-report.md`.
+
 - G12 PASS. No network, clock, locale, or filesystem-ordering dependence; YAML fixtures
   are inline strings or `tmp_path`-scoped files with fixed content. The hidden suite of
   67 tests runs in well under a second; the full existing suite plus the hidden suite

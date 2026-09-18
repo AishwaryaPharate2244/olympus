@@ -431,7 +431,7 @@ index b6c204c..c7a1566 100644
          if self.__dict__["_flags_cache"] is not None:
              super()._invalidate_flags_cache()
 diff --git a/omegaconf/basecontainer.py b/omegaconf/basecontainer.py
-index b68441d..d1cbc90 100644
+index b68441d..21e0df0 100644
 --- a/omegaconf/basecontainer.py
 +++ b/omegaconf/basecontainer.py
 @@ -38,8 +38,10 @@ from .base import (
@@ -489,7 +489,20 @@ index b68441d..d1cbc90 100644
  
              if dest_node is not None:
                  selected_union_value = (
-@@ -558,6 +567,9 @@ class BaseContainer(Container, ABC):
+@@ -549,15 +558,22 @@ class BaseContainer(Container, ABC):
+                             if isinstance(dest_node, AnyNode):
+                                 if src_node_missing:
+                                     node = copy.copy(src_node)
++                                    node.__dict__["_metadata"] = copy.copy(
++                                        node.__dict__["_metadata"]
++                                    )
+                                     # if src node is missing, use the value from the dest_node,
+                                     # but validate it against the type of the src node before assigment
+                                     node._set_value(dest_node._value())
++                                    node._set_provenance(dest_node._get_provenance())
+                                 else:
+                                     node = src_node
+                                 dest.__setitem__(key, node)
                              else:
                                  if not src_node_missing:
                                      dest_node._set_value(src_value)
@@ -499,7 +512,7 @@ index b68441d..d1cbc90 100644
  
                          except (ValidationError, ReadonlyConfigError) as e:
                              dest._format_and_raise(key=key, value=src_value, cause=e)
-@@ -592,6 +604,7 @@ class BaseContainer(Container, ABC):
+@@ -592,6 +608,7 @@ class BaseContainer(Container, ABC):
  
          if src._is_none():
              dest._set_value(None)
@@ -507,7 +520,7 @@ index b68441d..d1cbc90 100644
          elif src._is_missing():
              # do not change dest if src is MISSING.
              if dest._metadata.element_type is Any:
-@@ -617,6 +630,7 @@ class BaseContainer(Container, ABC):
+@@ -617,6 +634,7 @@ class BaseContainer(Container, ABC):
                          dest.__dict__["_content"] = temp_target.__dict__["_content"]
          elif src._is_interpolation():
              dest._set_value(src._value())
@@ -515,7 +528,7 @@ index b68441d..d1cbc90 100644
          else:
              temp_target = ListConfig(content=[], parent=dest._get_parent())
              temp_target.__dict__["_metadata"] = copy.deepcopy(
-@@ -646,6 +660,12 @@ class BaseContainer(Container, ABC):
+@@ -646,6 +664,12 @@ class BaseContainer(Container, ABC):
              if element_type is not None:
                  dest._metadata.element_type = element_type
              dest.__dict__["_content"] = temp_target.__dict__["_content"]
@@ -528,7 +541,7 @@ index b68441d..d1cbc90 100644
  
          # explicit flags on the source config are replacing the flag values in the destination
          flags = src._metadata.flags
-@@ -662,6 +682,12 @@ class BaseContainer(Container, ABC):
+@@ -662,6 +686,12 @@ class BaseContainer(Container, ABC):
          assert isinstance(src, (ListConfig, TupleConfig))
          if not src._is_missing():
              dest._set_value(src)
@@ -541,7 +554,7 @@ index b68441d..d1cbc90 100644
  
          flags = src._metadata.flags
          assert flags is not None
-@@ -839,6 +865,8 @@ class BaseContainer(Container, ABC):
+@@ -839,6 +869,8 @@ class BaseContainer(Container, ABC):
                  if special_value and isinstance(value, Node):
                      value = value._value()
                  self.__dict__["_content"][key]._set_value(value)
