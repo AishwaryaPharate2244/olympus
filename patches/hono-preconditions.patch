@@ -1,0 +1,866 @@
+diff --git a/jsr.json b/jsr.json
+index a57bee1..3772479 100644
+--- a/jsr.json
++++ b/jsr.json
+@@ -26,6 +26,7 @@
+     "./cors": "./src/middleware/cors/index.ts",
+     "./csrf": "./src/middleware/csrf/index.ts",
+     "./etag": "./src/middleware/etag/index.ts",
++    "./preconditions": "./src/middleware/preconditions/index.ts",
+     "./trailing-slash": "./src/middleware/trailing-slash/index.ts",
+     "./html": "./src/helper/html/index.ts",
+     "./css": "./src/helper/css/index.ts",
+diff --git a/package.json b/package.json
+index 4b5d71d..ae54a40 100644
+--- a/package.json
++++ b/package.json
+@@ -138,6 +138,11 @@
+       "import": "./dist/middleware/etag/index.js",
+       "require": "./dist/cjs/middleware/etag/index.js"
+     },
++    "./preconditions": {
++      "types": "./dist/types/middleware/preconditions/index.d.ts",
++      "import": "./dist/middleware/preconditions/index.js",
++      "require": "./dist/cjs/middleware/preconditions/index.js"
++    },
+     "./trailing-slash": {
+       "types": "./dist/types/middleware/trailing-slash/index.d.ts",
+       "import": "./dist/middleware/trailing-slash/index.js",
+@@ -478,6 +483,9 @@
+       "etag": [
+         "./dist/types/middleware/etag"
+       ],
++      "preconditions": [
++        "./dist/types/middleware/preconditions"
++      ],
+       "trailing-slash": [
+         "./dist/types/middleware/trailing-slash"
+       ],
+diff --git a/src/middleware/preconditions/index.test.ts b/src/middleware/preconditions/index.test.ts
+new file mode 100644
+index 0000000..19e0306
+--- /dev/null
++++ b/src/middleware/preconditions/index.test.ts
+@@ -0,0 +1,506 @@
++import type { PreconditionsValidators } from '.'
++import { preconditions } from '.'
++import type { Context } from '../../context'
++import { Hono } from '../../hono'
++
++const LAST_MODIFIED = 'Sun, 06 Nov 1994 08:49:37 GMT'
++const BEFORE = 'Sun, 06 Nov 1994 08:49:36 GMT'
++const AFTER = 'Sun, 06 Nov 1994 08:49:38 GMT'
++
++const createApp = (validators: PreconditionsValidators | null) => {
++  const describe = vi.fn(() => validators)
++  const handler = vi.fn()
++  const app = new Hono()
++  const middleware = preconditions(describe)
++  const respond = (c: Context) => {
++    handler()
++    c.header('X-Handler', 'yes')
++    return c.text('body', 201)
++  }
++  app.on(['GET', 'POST', 'PUT', 'DELETE', 'QUERY'], '/r', middleware, respond)
++  app.get('/plain', respond)
++  return { app, describe, handler }
++}
++
++const request = (
++  app: Hono,
++  headers: Record<string, string>,
++  method = 'GET',
++  path = '/r'
++): Promise<Response> => Promise.resolve(app.request(path, { method, headers }))
++
++const expectHandled = async (res: Response, method = 'GET') => {
++  expect(res.status).toBe(201)
++  expect(res.headers.get('X-Handler')).toBe('yes')
++  expect(res.headers.get('ETag')).toBeNull()
++  expect(res.headers.get('Last-Modified')).toBeNull()
++  expect(await res.text()).toBe(method === 'HEAD' ? '' : 'body')
++}
++
++const expectBlocked = async (res: Response, status: 304 | 412) => {
++  expect(res.status).toBe(status)
++  expect(res.headers.get('X-Handler')).toBeNull()
++  expect(await res.text()).toBe('')
++}
++
++describe('Preconditions Middleware', () => {
++  describe('without usable precondition headers', () => {
++    it('does not call describe', async () => {
++      const { app, describe, handler } = createApp({ etag: '"a"' })
++      await expectHandled(await request(app, {}))
++      expect(describe).not.toHaveBeenCalled()
++      expect(handler).toHaveBeenCalledTimes(1)
++    })
++
++    it('treats blank headers as absent', async () => {
++      const { app, describe } = createApp({ etag: '"a"', lastModified: LAST_MODIFIED })
++      await expectHandled(
++        await request(app, {
++          'If-Match': '   ',
++          'If-None-Match': '',
++          'If-Unmodified-Since': ' ',
++          'If-Modified-Since': '',
++        })
++      )
++      expect(describe).not.toHaveBeenCalled()
++    })
++
++    it.each([
++      'Sun, 31 Feb 2021 00:00:00 GMT',
++      '1994-11-06T08:49:37Z',
++      'Sunday, 06-Nov-94 08:49:37 GMT',
++      'Sun Nov  6 08:49:37 1994',
++      'Sun, 06 nov 1994 08:49:37 GMT',
++      'Sun, 6 Nov 1994 08:49:37 GMT',
++      'Sun, 06 Nov 1994 24:00:00 GMT',
++      'Sun, 06 Nov 94 08:49:37 GMT',
++      'Sun, 06 Nov 1994 08:49:37 UTC',
++    ])('ignores unparseable date %s', async (date) => {
++      const { app, describe } = createApp({ lastModified: LAST_MODIFIED })
++      await expectHandled(await request(app, { 'If-Modified-Since': date }))
++      await expectHandled(await request(app, { 'If-Unmodified-Since': date }, 'PUT'))
++      expect(describe).not.toHaveBeenCalled()
++    })
++
++    it('ignores If-Modified-Since on unsafe methods', async () => {
++      const { app, describe } = createApp({ lastModified: LAST_MODIFIED })
++      await expectHandled(await request(app, { 'If-Modified-Since': AFTER }, 'POST'))
++      expect(describe).not.toHaveBeenCalled()
++    })
++
++    it('never calls describe on routes without the middleware', async () => {
++      const { app, describe } = createApp({ etag: '"a"' })
++      const res = await request(app, { 'If-None-Match': '"a"' }, 'GET', '/plain')
++      expect(res.status).toBe(201)
++      expect(describe).not.toHaveBeenCalled()
++    })
++  })
++
++  describe('If-Match', () => {
++    it.each([
++      ['"a"', '"a"'],
++      ['"a"', '"b", "a"'],
++      ['"a"', '"b" ,"a" '],
++      ['"a"', 'W/"a", "a"'],
++      ['"a,b"', '"x", "a,b"'],
++      ['"*"', '"*"'],
++      ['""', '""'],
++      [' "a" ', '"a"'],
++    ])('passes when current %s strongly matches %s', async (etag, header) => {
++      const { app, describe } = createApp({ etag })
++      await expectHandled(await request(app, { 'If-Match': header }, 'PUT'))
++      expect(describe).toHaveBeenCalledTimes(1)
++    })
++
++    it.each([
++      ['"a"', '"b"'],
++      ['"a"', 'W/"a"'],
++      ['W/"a"', 'W/"a"'],
++      ['W/"a"', '"a"'],
++      ['"a"', 'w/"a"'],
++      ['"a"', 'a'],
++      ['"a"', '"*"'],
++      ['"a"', '*, "b"'],
++      ['"a"', '"a'],
++      ['"a"', '","'],
++      ['a', 'a'],
++      ['W/ "a"', 'W/ "a"'],
++    ])('fails when current %s does not strongly match %s', async (etag, header) => {
++      const { app } = createApp({ etag })
++      await expectBlocked(await request(app, { 'If-Match': header }, 'PUT'), 412)
++    })
++
++    it('does not treat W/ followed by a space as a tag', async () => {
++      const { app } = createApp({ etag: '"a"' })
++      await expectBlocked(await request(app, { 'If-Match': 'W/ "a"' }, 'PUT'), 412)
++    })
++
++    it('returns 412 even for GET, HEAD, and QUERY', async () => {
++      const { app } = createApp({ etag: '"a"' })
++      for (const method of ['GET', 'HEAD', 'QUERY']) {
++        await expectBlocked(await request(app, { 'If-Match': '"b"' }, method), 412)
++      }
++    })
++
++    it('star passes only when a representation exists', async () => {
++      const exists = createApp({})
++      await expectHandled(await request(exists.app, { 'If-Match': ' * ' }, 'PUT'))
++
++      const missing = createApp(null)
++      const res = await request(missing.app, { 'If-Match': '*' }, 'PUT')
++      await expectBlocked(res, 412)
++      expect(res.headers.get('ETag')).toBeNull()
++    })
++
++    it('fails when there is no current etag', async () => {
++      const { app } = createApp({ lastModified: LAST_MODIFIED })
++      const res = await request(app, { 'If-Match': '"a"' }, 'PUT')
++      await expectBlocked(res, 412)
++      expect(res.headers.get('Last-Modified')).toBe(LAST_MODIFIED)
++    })
++
++    it('ignores If-Unmodified-Since while present', async () => {
++      const { app } = createApp({ etag: '"a"', lastModified: LAST_MODIFIED })
++      await expectHandled(
++        await request(app, { 'If-Match': '"a"', 'If-Unmodified-Since': BEFORE }, 'PUT')
++      )
++    })
++
++    it('echoes validators on failure', async () => {
++      const { app } = createApp({ etag: ' "a" ', lastModified: new Date(784111777999) })
++      const res = await request(app, { 'If-Match': '"b"' }, 'PUT')
++      await expectBlocked(res, 412)
++      expect(res.headers.get('ETag')).toBe('"a"')
++      expect(res.headers.get('Last-Modified')).toBe(LAST_MODIFIED)
++    })
++
++    it('omits an invalid etag', async () => {
++      const { app } = createApp({ etag: 'a' })
++      const res = await request(app, { 'If-Match': '"a"' }, 'PUT')
++      await expectBlocked(res, 412)
++      expect(res.headers.get('ETag')).toBeNull()
++    })
++  })
++
++  describe('If-Unmodified-Since', () => {
++    it.each([
++      [LAST_MODIFIED, 201],
++      [AFTER, 201],
++      [BEFORE, 412],
++    ])('with header %s returns %i', async (header, status) => {
++      const { app } = createApp({ lastModified: LAST_MODIFIED })
++      const res = await request(app, { 'If-Unmodified-Since': header }, 'DELETE')
++      if (status === 201) {
++        await expectHandled(res)
++      } else {
++        await expectBlocked(res, 412)
++        expect(res.headers.get('Last-Modified')).toBe(LAST_MODIFIED)
++      }
++    })
++
++    it('compares whole seconds of a Date', async () => {
++      const { app } = createApp({ lastModified: new Date(Date.parse(LAST_MODIFIED) + 999) })
++      await expectHandled(await request(app, { 'If-Unmodified-Since': LAST_MODIFIED }, 'PUT'))
++    })
++
++    it('parses a wrong weekday', async () => {
++      const { app, describe } = createApp({ lastModified: LAST_MODIFIED })
++      const res = await request(
++        app,
++        { 'If-Unmodified-Since': 'Mon, 06 Nov 1994 08:49:36 GMT' },
++        'PUT'
++      )
++      await expectBlocked(res, 412)
++      expect(describe).toHaveBeenCalledTimes(1)
++    })
++
++    it('applies to GET too', async () => {
++      const { app } = createApp({ lastModified: LAST_MODIFIED })
++      await expectBlocked(await request(app, { 'If-Unmodified-Since': BEFORE }), 412)
++    })
++
++    it('continues without a representation or usable time', async () => {
++      for (const validators of [
++        null,
++        {},
++        { lastModified: 'garbage' },
++        { lastModified: new Date(NaN) },
++        { lastModified: '1994-11-06T08:49:37Z' },
++      ]) {
++        const { app, describe } = createApp(validators)
++        await expectHandled(await request(app, { 'If-Unmodified-Since': BEFORE }, 'PUT'))
++        expect(describe).toHaveBeenCalledTimes(1)
++      }
++    })
++
++    it('trims and canonicalizes string lastModified', async () => {
++      const { app } = createApp({ lastModified: '  Fri, 06 Nov 1994 08:49:37 GMT\t' })
++      const res = await request(app, { 'If-Unmodified-Since': BEFORE }, 'PUT')
++      await expectBlocked(res, 412)
++      expect(res.headers.get('Last-Modified')).toBe(LAST_MODIFIED)
++    })
++
++    it('does not shift two-digit years into the 1900s', async () => {
++      const { app } = createApp({ lastModified: 'Sat, 01 Jan 0050 00:00:00 GMT' })
++      const res = await request(
++        app,
++        { 'If-Unmodified-Since': 'Sat, 01 Jan 1950 00:00:00 GMT' },
++        'PUT'
++      )
++      await expectHandled(res)
++
++      const later = createApp({ lastModified: 'Sat, 01 Jan 1950 00:00:01 GMT' })
++      const res2 = await request(
++        later.app,
++        { 'If-Unmodified-Since': 'Thu, 01 Jan 0050 00:00:00 GMT' },
++        'PUT'
++      )
++      await expectBlocked(res2, 412)
++    })
++
++    it('zero-pads years on Last-Modified', async () => {
++      const lastModified = new Date(0)
++      lastModified.setUTCFullYear(5, 0, 2)
++      const { app } = createApp({ lastModified })
++      const res = await request(
++        app,
++        { 'If-Unmodified-Since': 'Mon, 01 Jan 0001 00:00:00 GMT' },
++        'PUT'
++      )
++      await expectBlocked(res, 412)
++      expect(res.headers.get('Last-Modified')).toBe('Sun, 02 Jan 0005 00:00:00 GMT')
++    })
++
++    it('accepts year 0000 and 9999 but not Dates outside that range', async () => {
++      const zero = createApp({ lastModified: 'Mon, 01 Jan 0000 00:00:01 GMT' })
++      const res = await request(
++        zero.app,
++        { 'If-Unmodified-Since': 'Sat, 01 Jan 0000 00:00:00 GMT' },
++        'PUT'
++      )
++      await expectBlocked(res, 412)
++      expect(res.headers.get('Last-Modified')).toBe('Sat, 01 Jan 0000 00:00:01 GMT')
++
++      const tooLate = new Date(0)
++      tooLate.setUTCFullYear(10000, 0, 1)
++      const late = createApp({ lastModified: tooLate })
++      await expectHandled(
++        await request(late.app, { 'If-Unmodified-Since': 'Fri, 31 Dec 9999 23:59:59 GMT' }, 'PUT')
++      )
++
++      const tooEarly = new Date(0)
++      tooEarly.setUTCFullYear(-1, 0, 1)
++      const early = createApp({ lastModified: tooEarly, etag: '"a"' })
++      const res2 = await request(early.app, { 'If-None-Match': '"a"' })
++      await expectBlocked(res2, 304)
++      expect(res2.headers.get('Last-Modified')).toBeNull()
++    })
++
++    it('accepts 29 Feb only in leap years', async () => {
++      const { app, describe } = createApp({ lastModified: LAST_MODIFIED })
++      await expectHandled(
++        await request(app, { 'If-Unmodified-Since': 'Tue, 29 Feb 2000 00:00:00 GMT' }, 'PUT')
++      )
++      expect(describe).toHaveBeenCalledTimes(1)
++      await expectHandled(
++        await request(app, { 'If-Unmodified-Since': 'Thu, 29 Feb 1900 00:00:00 GMT' }, 'PUT')
++      )
++      expect(describe).toHaveBeenCalledTimes(1)
++    })
++  })
++
++  describe('If-None-Match', () => {
++    it.each([
++      ['"a"', '"a"'],
++      ['"a"', 'W/"a"'],
++      ['W/"a"', '"a"'],
++      ['W/"a"', '"b", W/"a"'],
++    ])('current %s weakly matches %s', async (etag, header) => {
++      for (const method of ['GET', 'HEAD', 'QUERY']) {
++        const { app, handler } = createApp({ etag })
++        const res = await request(app, { 'If-None-Match': header }, method)
++        await expectBlocked(res, 304)
++        expect(res.headers.get('ETag')).toBe(etag)
++        expect(handler).not.toHaveBeenCalled()
++      }
++      const { app } = createApp({ etag })
++      await expectBlocked(await request(app, { 'If-None-Match': header }, 'POST'), 412)
++    })
++
++    it.each([
++      ['"a"', '"b"'],
++      ['"a"', 'w/"a"'],
++      ['"a"', 'a'],
++      ['"a"', '"*"'],
++      ['"a"', '"b", *'],
++      ['a', 'a'],
++      ['a', '*, a'],
++    ])('current %s does not match %s', async (etag, header) => {
++      const { app } = createApp({ etag })
++      await expectHandled(await request(app, { 'If-None-Match': header }))
++      await expectHandled(await request(app, { 'If-None-Match': header }, 'PUT'))
++    })
++
++    it('star fails when a representation exists', async () => {
++      const { app } = createApp({})
++      await expectBlocked(await request(app, { 'If-None-Match': '*' }), 304)
++      await expectBlocked(await request(app, { 'If-None-Match': ' * ' }, 'PUT'), 412)
++    })
++
++    it('star passes when no representation exists', async () => {
++      const { app } = createApp(null)
++      await expectHandled(await request(app, { 'If-None-Match': '*' }, 'PUT'))
++    })
++
++    it('suppresses If-Modified-Since even on a miss', async () => {
++      const { app } = createApp({ etag: '"a"', lastModified: LAST_MODIFIED })
++      await expectHandled(
++        await request(app, { 'If-None-Match': '"b"', 'If-Modified-Since': AFTER })
++      )
++    })
++
++    it('keeps HEAD as the request method on a GET route', async () => {
++      const app = new Hono()
++      let seen: string | undefined
++      app.get(
++        '/r',
++        preconditions((c) => {
++          seen = c.req.method
++          return { etag: '"a"' }
++        }),
++        (c) => c.text('body')
++      )
++      const res = await app.request('/r', { method: 'HEAD', headers: { 'If-None-Match': '"a"' } })
++      expect(seen).toBe('HEAD')
++      expect(res.status).toBe(304)
++      expect(res.headers.get('ETag')).toBe('"a"')
++    })
++
++    it('runs after a passing If-Match', async () => {
++      const { app } = createApp({ etag: '"a"' })
++      await expectBlocked(
++        await request(app, { 'If-Match': '"a"', 'If-None-Match': '"a"' }, 'PUT'),
++        412
++      )
++    })
++  })
++
++  describe('If-Modified-Since', () => {
++    it.each([
++      [BEFORE, 201],
++      [LAST_MODIFIED, 304],
++      [AFTER, 304],
++    ])('with header %s returns %i', async (header, status) => {
++      for (const method of ['GET', 'HEAD', 'QUERY']) {
++        const { app } = createApp({ etag: 'W/"x"', lastModified: LAST_MODIFIED })
++        const res = await request(app, { 'If-Modified-Since': header }, method)
++        if (status === 201) {
++          await expectHandled(res, method)
++        } else {
++          await expectBlocked(res, 304)
++          expect(res.headers.get('ETag')).toBe('W/"x"')
++          expect(res.headers.get('Last-Modified')).toBe(LAST_MODIFIED)
++        }
++      }
++    })
++
++    it('continues when the time is missing', async () => {
++      for (const validators of [null, { etag: '"a"' }]) {
++        const { app, describe } = createApp(validators)
++        await expectHandled(await request(app, { 'If-Modified-Since': AFTER }))
++        expect(describe).toHaveBeenCalledTimes(1)
++      }
++    })
++  })
++
++  it('calls describe at most once', async () => {
++    const { app, describe } = createApp({ etag: '"a"', lastModified: LAST_MODIFIED })
++    await expectHandled(
++      await request(app, {
++        'If-Match': '"a"',
++        'If-None-Match': '"b"',
++        'If-Unmodified-Since': AFTER,
++        'If-Modified-Since': BEFORE,
++      })
++    )
++    expect(describe).toHaveBeenCalledTimes(1)
++  })
++
++  it('supports async describe', async () => {
++    const app = new Hono()
++    app.get(
++      '/r',
++      preconditions(async () => ({ etag: '"a"' })),
++      (c) => c.text('body')
++    )
++    const res = await app.request('/r', { headers: { 'If-None-Match': '"a"' } })
++    expect(res.status).toBe(304)
++  })
++
++  it('leaves successful responses unchanged', async () => {
++    const app = new Hono()
++    app.put(
++      '/r',
++      preconditions(() => ({ etag: '"a"', lastModified: LAST_MODIFIED })),
++      (c) => c.json({ ok: true }, 202, { ETag: '"b"', 'X-Custom': '1' })
++    )
++    const res = await app.request('/r', { method: 'PUT', headers: { 'If-Match': '"a"' } })
++    expect(res.status).toBe(202)
++    expect(res.headers.get('ETag')).toBe('"b"')
++    expect(res.headers.get('X-Custom')).toBe('1')
++    expect(res.headers.get('Last-Modified')).toBeNull()
++    expect(await res.json()).toEqual({ ok: true })
++  })
++
++  it('handles a throw from describe like a handler error', async () => {
++    const app = new Hono()
++    const handler = vi.fn()
++    app.get(
++      '/r',
++      preconditions(async () => {
++        throw new Error('boom')
++      }),
++      (c) => {
++        handler()
++        return c.text('body')
++      }
++    )
++    app.onError((err, c) => c.text(`caught ${err.message}`, 500))
++    const res = await app.request('/r', { headers: { 'If-None-Match': '"a"' } })
++    expect(res.status).toBe(500)
++    expect(await res.text()).toBe('caught boom')
++    expect(handler).not.toHaveBeenCalled()
++  })
++
++  it('keeps path parameters available', async () => {
++    const app = new Hono()
++    app.get(
++      '/posts/:id',
++      preconditions((c) => ({ etag: `"${c.req.param('id')}"` })),
++      (c) => c.text(c.req.param('id'))
++    )
++    let res = await app.request('/posts/42', { headers: { 'If-None-Match': '"42"' } })
++    expect(res.status).toBe(304)
++    res = await app.request('/posts/7', { headers: { 'If-None-Match': '"42"' } })
++    expect(res.status).toBe(200)
++    expect(await res.text()).toBe('7')
++  })
++
++  it('keeps path parameters available in a mounted sub-application', async () => {
++    const sub = new Hono()
++    sub.use(
++      '/:id',
++      preconditions((c) => ({ etag: `"${c.req.param('id')}"` }))
++    )
++    sub.get('/:id', (c) => c.text(c.req.param('id')))
++    const app = new Hono()
++    app.route('/posts', sub)
++
++    let res = await app.request('/posts/42', { headers: { 'If-None-Match': '"42"' } })
++    expect(res.status).toBe(304)
++    expect(res.headers.get('ETag')).toBe('"42"')
++    res = await app.request('/posts/7', { headers: { 'If-None-Match': '"42"' } })
++    expect(res.status).toBe(200)
++    expect(await res.text()).toBe('7')
++  })
++})
+diff --git a/src/middleware/preconditions/index.ts b/src/middleware/preconditions/index.ts
+new file mode 100644
+index 0000000..abc2e89
+--- /dev/null
++++ b/src/middleware/preconditions/index.ts
+@@ -0,0 +1,310 @@
++/**
++ * @module
++ * Preconditions Middleware for Hono.
++ */
++
++import type { Context } from '../../context'
++import type { Env, MiddlewareHandler } from '../../types'
++
++/**
++ * Validators describing the current representation of the target resource.
++ */
++export type PreconditionsValidators = {
++  /**
++   * The current entity-tag, e.g. `"abc"` or `W/"abc"`.
++   */
++  etag?: string
++  /**
++   * The last modification time, as a `Date` or an IMF-fixdate string.
++   */
++  lastModified?: Date | string
++}
++
++/**
++ * Describes the current representation of the target resource.
++ * Return `null` when no representation exists.
++ */
++// eslint-disable-next-line @typescript-eslint/no-explicit-any
++export type PreconditionsDescriber<E extends Env = any, P extends string = string> = (
++  c: Context<E, P>
++) => PreconditionsValidators | null | Promise<PreconditionsValidators | null>
++
++type EntityTag = {
++  weak: boolean
++  // The opaque-tag, including the surrounding double quotes.
++  opaque: string
++}
++
++type Representation = {
++  etag: string | undefined
++  tag: EntityTag | undefined
++  // Milliseconds since the epoch, floored to whole seconds.
++  time: number | undefined
++}
++
++const ENTITY_TAG_REGEXP = /^(W\/)?("[^"]*")$/
++
++const IMF_FIXDATE_REGEXP =
++  /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), (\d{2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4}) (\d{2}):(\d{2}):(\d{2}) GMT$/
++
++const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
++const MONTH_NAMES = [
++  'Jan',
++  'Feb',
++  'Mar',
++  'Apr',
++  'May',
++  'Jun',
++  'Jul',
++  'Aug',
++  'Sep',
++  'Oct',
++  'Nov',
++  'Dec',
++]
++
++const isSafeMethod = (method: string): boolean =>
++  method === 'GET' || method === 'HEAD' || method === 'QUERY'
++
++const presentHeader = (c: Context, name: string): string | undefined => {
++  const value = c.req.header(name)
++  if (value === undefined) {
++    return undefined
++  }
++  const trimmed = value.trim()
++  return trimmed === '' ? undefined : trimmed
++}
++
++const parseEntityTag = (value: string): EntityTag | undefined => {
++  const match = ENTITY_TAG_REGEXP.exec(value)
++  return match ? { weak: match[1] !== undefined, opaque: match[2] } : undefined
++}
++
++// Splits on commas outside of double quotes and parses each member.
++// Members that are not entity-tags are dropped.
++const parseEntityTagList = (value: string): EntityTag[] => {
++  const members: string[] = []
++  let start = 0
++  let quoted = false
++  for (let i = 0; i < value.length; i++) {
++    const ch = value[i]
++    if (ch === '"') {
++      quoted = !quoted
++    } else if (ch === ',' && !quoted) {
++      members.push(value.slice(start, i))
++      start = i + 1
++    }
++  }
++  members.push(value.slice(start))
++
++  const tags: EntityTag[] = []
++  for (const member of members) {
++    const tag = parseEntityTag(member.trim())
++    if (tag) {
++      tags.push(tag)
++    }
++  }
++  return tags
++}
++
++const isLeapYear = (year: number): boolean =>
++  (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
++
++const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
++
++const daysInMonth = (year: number, month: number): number =>
++  month === 1 && isLeapYear(year) ? 29 : DAYS_IN_MONTH[month]
++
++/**
++ * Parses an IMF-fixdate (RFC 9110, Section 5.6.7). Obsolete formats are rejected.
++ * The weekday is not checked against the date.
++ */
++const parseImfFixdate = (value: string): number | undefined => {
++  const match = IMF_FIXDATE_REGEXP.exec(value)
++  if (!match) {
++    return undefined
++  }
++  const day = Number(match[1])
++  const month = MONTH_NAMES.indexOf(match[2])
++  const year = Number(match[3])
++  const hour = Number(match[4])
++  const minute = Number(match[5])
++  const second = Number(match[6])
++  // RFC 9110 allows a leap second (60).
++  if (day < 1 || day > daysInMonth(year, month) || hour > 23 || minute > 59 || second > 60) {
++    return undefined
++  }
++  // `Date.UTC` maps years 0 through 99 to the 1900s, so set the full year explicitly.
++  const date = new Date(0)
++  date.setUTCFullYear(year, month, day)
++  date.setUTCHours(hour, minute, second, 0)
++  return date.getTime()
++}
++
++const isUsableTime = (time: number): boolean => {
++  if (!Number.isFinite(time)) {
++    return false
++  }
++  const year = new Date(time).getUTCFullYear()
++  return year >= 0 && year <= 9999
++}
++
++const toTime = (value: unknown): number | undefined => {
++  let time: number | undefined
++  if (value instanceof Date) {
++    const ms = value.getTime()
++    time = Number.isNaN(ms) ? undefined : Math.floor(ms / 1000) * 1000
++  } else if (typeof value === 'string') {
++    time = parseImfFixdate(value.trim())
++  }
++  return time !== undefined && isUsableTime(time) ? time : undefined
++}
++
++const pad = (value: number, length: number): string => String(value).padStart(length, '0')
++
++const formatImfFixdate = (time: number): string => {
++  const date = new Date(time)
++  return `${DAY_NAMES[date.getUTCDay()]}, ${pad(date.getUTCDate(), 2)} ${
++    MONTH_NAMES[date.getUTCMonth()]
++  } ${pad(date.getUTCFullYear(), 4)} ${pad(date.getUTCHours(), 2)}:${pad(
++    date.getUTCMinutes(),
++    2
++  )}:${pad(date.getUTCSeconds(), 2)} GMT`
++}
++
++const toRepresentation = (
++  validators: PreconditionsValidators | null | undefined
++): Representation | undefined => {
++  if (validators == null) {
++    return undefined
++  }
++  const etag = typeof validators.etag === 'string' ? validators.etag.trim() : undefined
++  const tag = etag === undefined ? undefined : parseEntityTag(etag)
++  return {
++    etag: tag ? etag : undefined,
++    tag,
++    time: toTime(validators.lastModified),
++  }
++}
++
++// If-Match uses the strong comparison function.
++const evaluateIfMatch = (header: string, rep: Representation | undefined): boolean => {
++  if (header === '*') {
++    return rep !== undefined
++  }
++  const current = rep?.tag
++  if (!current || current.weak) {
++    return false
++  }
++  return parseEntityTagList(header).some((tag) => !tag.weak && tag.opaque === current.opaque)
++}
++
++// If-None-Match uses the weak comparison function.
++const evaluateIfNoneMatch = (header: string, rep: Representation | undefined): boolean => {
++  if (header === '*') {
++    return rep === undefined
++  }
++  const current = rep?.tag
++  if (!current) {
++    return true
++  }
++  return !parseEntityTagList(header).some((tag) => tag.opaque === current.opaque)
++}
++
++/**
++ * Preconditions Middleware for Hono.
++ *
++ * Evaluates `If-Match`, `If-None-Match`, `If-Modified-Since`, and
++ * `If-Unmodified-Since` (RFC 9110, Section 13) against the validators returned
++ * by `describe`, and responds with `304 Not Modified` or
++ * `412 Precondition Failed` when a precondition fails.
++ *
++ * `describe` is called at most once per request, and only when the request
++ * carries a usable precondition header.
++ *
++ * @param {PreconditionsDescriber} describe - Returns the current validators of the target resource, or `null` when it does not exist.
++ * @returns {MiddlewareHandler} The middleware handler function.
++ *
++ * @example
++ * ```ts
++ * const app = new Hono()
++ *
++ * app.put(
++ *   '/posts/:id',
++ *   preconditions(async (c) => {
++ *     const post = await getPost(c.req.param('id'))
++ *     return post ? { etag: post.etag, lastModified: post.updatedAt } : null
++ *   }),
++ *   async (c) => {
++ *     // Only reached when the client's preconditions hold.
++ *     return c.json(await updatePost(c.req.param('id'), await c.req.json()))
++ *   }
++ * )
++ * ```
++ */
++// eslint-disable-next-line @typescript-eslint/no-explicit-any
++export const preconditions = <E extends Env = any, P extends string = string>(
++  describe: PreconditionsDescriber<E, P>
++): MiddlewareHandler<E, P> => {
++  return async function preconditions(c, next) {
++    const method = c.req.method
++    const ifMatch = presentHeader(c, 'If-Match')
++    const ifNoneMatch = presentHeader(c, 'If-None-Match')
++
++    let ifUnmodifiedSince: number | undefined
++    if (ifMatch === undefined) {
++      const value = presentHeader(c, 'If-Unmodified-Since')
++      ifUnmodifiedSince = value === undefined ? undefined : parseImfFixdate(value)
++    }
++
++    let ifModifiedSince: number | undefined
++    if (ifNoneMatch === undefined && isSafeMethod(method)) {
++      const value = presentHeader(c, 'If-Modified-Since')
++      ifModifiedSince = value === undefined ? undefined : parseImfFixdate(value)
++    }
++
++    if (
++      ifMatch === undefined &&
++      ifNoneMatch === undefined &&
++      ifUnmodifiedSince === undefined &&
++      ifModifiedSince === undefined
++    ) {
++      await next()
++      return
++    }
++
++    const rep = toRepresentation(await describe(c))
++
++    const fail = (status: 304 | 412) => {
++      if (rep?.etag !== undefined) {
++        c.header('ETag', rep.etag)
++      }
++      if (rep?.time !== undefined) {
++        c.header('Last-Modified', formatImfFixdate(rep.time))
++      }
++      return c.body(null, status)
++    }
++
++    if (ifMatch !== undefined) {
++      if (!evaluateIfMatch(ifMatch, rep)) {
++        return fail(412)
++      }
++    } else if (ifUnmodifiedSince !== undefined) {
++      if (rep?.time !== undefined && rep.time > ifUnmodifiedSince) {
++        return fail(412)
++      }
++    }
++
++    if (ifNoneMatch !== undefined) {
++      if (!evaluateIfNoneMatch(ifNoneMatch, rep)) {
++        return fail(isSafeMethod(method) ? 304 : 412)
++      }
++    } else if (ifModifiedSince !== undefined) {
++      if (rep?.time !== undefined && rep.time <= ifModifiedSince) {
++        return fail(304)
++      }
++    }
++
++    await next()
++  }
++}
