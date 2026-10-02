@@ -504,3 +504,89 @@ describe('Preconditions Middleware', () => {
     expect(await res.text()).toBe('7')
   })
 })
+
+const SUN = 'Sun, 06 Nov 1994 08:49:37 GMT'
+
+const run = async (validators: PreconditionsValidators | null, headers: Record<string, string>, method = 'GET') => {
+  const describe = vi.fn(() => validators)
+  const handler = vi.fn()
+  const app = new Hono()
+  app.on([method], '/r', preconditions(describe), (c) => {
+    handler()
+    return c.text('body')
+  })
+  const res = await app.request('/r', { method, headers })
+  return { res, describe, handler }
+}
+
+describe('spec edge cases', () => {
+  it('trimmed lone * passes for {} and fails on null', async () => {
+    const a = await run({}, { 'If-Match': ' * ' }, 'PUT')
+    expect(a.res.status).toBe(200)
+    const b = await run(null, { 'If-Match': ' * ' }, 'PUT')
+    expect(b.res.status).toBe(412)
+    expect(b.handler).not.toHaveBeenCalled()
+  })
+
+  it('unquoted v1 exists for * but never matches "v1" and is never sent', async () => {
+    const a = await run({ etag: 'v1' }, { 'If-Match': '*' }, 'PUT')
+    expect(a.res.status).toBe(200)
+    const b = await run({ etag: 'v1' }, { 'If-Match': '"v1"' }, 'PUT')
+    expect(b.res.status).toBe(412)
+    expect(b.res.headers.get('ETag')).toBeNull()
+    const c = await run({ etag: 'v1' }, { 'If-None-Match': '"v1"' })
+    expect(c.res.status).toBe(200)
+  })
+
+  it('trims a descriptor etag before compare and before send', async () => {
+    const a = await run({ etag: ' "v1" ' }, { 'If-Match': '"v1"' }, 'PUT')
+    expect(a.res.status).toBe(200)
+    const b = await run({ etag: ' W/"v1" ' }, { 'If-None-Match': '"v1"' })
+    expect(b.res.status).toBe(304)
+    expect(b.res.headers.get('ETag')).toBe('W/"v1"')
+  })
+
+  it('"v"1" never matches or gets sent; star is still an empty 304 with Last-Modified', async () => {
+    const v = { etag: '"v"1"', lastModified: SUN }
+    const a = await run(v, { 'If-None-Match': '"v"1"' })
+    expect(a.res.status).toBe(200)
+    const b = await run(v, { 'If-None-Match': '*' })
+    expect(b.res.status).toBe(304)
+    expect(await b.res.text()).toBe('')
+    expect(b.res.headers.get('ETag')).toBeNull()
+    expect(b.res.headers.get('Last-Modified')).toBe(SUN)
+  })
+
+  it('padded ISO and NaN lastModified are ignored, a valid etag still works', async () => {
+    for (const lastModified of [' 2024-01-02T03:04:05Z ', new Date(NaN)]) {
+      const r = await run({ etag: '"v1"', lastModified }, { 'If-None-Match': '"v1"' })
+      expect(r.res.status).toBe(304)
+      expect(r.res.headers.get('ETag')).toBe('"v1"')
+      expect(r.res.headers.get('Last-Modified')).toBeNull()
+    }
+  })
+
+  it('year 94 stays 94 and prints four digits', async () => {
+    const lm = 'Fri, 01 Jan 0094 00:00:00 GMT'
+    const a = await run(
+      { etag: '"v1"', lastModified: lm },
+      { 'If-Unmodified-Since': 'Sat, 01 Jan 1994 00:00:00 GMT' },
+      'PUT'
+    )
+    expect(a.res.status).toBe(200)
+    const b = await run({ etag: '"v1"', lastModified: lm }, { 'If-Match': '"x"' }, 'PUT')
+    expect(b.res.status).toBe(412)
+    expect(b.res.headers.get('Last-Modified')).toBe(lm)
+  })
+
+  it('RFC 850 and asctime on either date header do not call describe', async () => {
+    for (const v of ['Sunday, 06-Nov-94 08:49:37 GMT', 'Sun Nov 06 08:49:37 1994']) {
+      const a = await run({ lastModified: SUN }, { 'If-Unmodified-Since': v }, 'PUT')
+      expect(a.describe).not.toHaveBeenCalled()
+      expect(a.res.status).toBe(200)
+      const b = await run({ lastModified: SUN }, { 'If-Modified-Since': v })
+      expect(b.describe).not.toHaveBeenCalled()
+      expect(b.res.status).toBe(200)
+    }
+  })
+})
