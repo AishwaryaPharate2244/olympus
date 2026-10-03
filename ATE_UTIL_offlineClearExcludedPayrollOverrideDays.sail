@@ -1,5 +1,5 @@
 /*
-  ATE_UTIL_offlineClearExcludedPayrollOverride
+  ATE_UTIL_offlineClearExcludedPayrollOverrideDays
   On each day that a work order has NOT selected in "payrollOverrideDays",
   set its labor and equipment payroll override (category + rate) to null.
 

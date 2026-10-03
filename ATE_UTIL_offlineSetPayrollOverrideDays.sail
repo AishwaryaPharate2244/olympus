@@ -30,7 +30,7 @@ a!localVariables(
     )
   ),
   /* Step 2 */
-  rule!ATE_UTIL_offlineClearExcludedPayrollOverride(
+  rule!ATE_UTIL_offlineClearExcludedPayrollOverrideDays(
     weekData: local!weekWithDays,
     woKey: "woCrewData"
   )
