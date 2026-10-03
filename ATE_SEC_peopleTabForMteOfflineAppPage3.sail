@@ -70,174 +70,28 @@ a!localVariables(
   local!epOptionIds: tointeger(index(local!epOptions, "id", {})),
 
   /* ---------- WEEKLY: DAYS THAT PAYROLL OVERRIDE EDITS APPLY TO ---------- */
-  /* Stored on this work order in weekCrewData (key "payrollOverrideDays") so saves never reset it */
-  /* Assumes weekCrewData is ordered Sun (1) .. Sat (7) */
-  local!dayLabels: { "Sun", "Mon", "Tues", "Wed", "Thurs", "Fri", "Sat" },
-  local!dayIdxs: enumerate(count(ri!weekCrewData)) + 1,
-  local!thisWoNumber: tostring(index(ri!woItem, "workOrderNumber", "")),
-  /* This work order's entry on each day of the week (null if the WO is not on that day) */
-  local!woEntriesAllDays: if(
+  local!overrideDays: if(
     a!defaultValue(ri!isWeekly, false()),
-    a!forEach(
-      items: ri!weekCrewData,
-      expression: index(
-        index(
-          index(fv!item, "woCrewData", {}),
-          wherecontains(
-            local!thisWoNumber,
-            touniformstring(index(index(fv!item, "woCrewData", {}), "workOrderNumber", {}))
-          ),
-          {}
-        ),
-        1,
-        null
-      )
+    rule!ATE_UTIL_offlineGetPayrollOverrideDays(
+      weekCrewData: ri!weekCrewData,
+      woNumber: tostring(index(ri!woItem, "workOrderNumber", ""))
     ),
     {}
   ),
-  /* First day that has a saved selection (all days hold the same value; reading any day
-     keeps it safe if one day's entry gets rebuilt by another save) */
-  local!savedDayIdx: index(
-    reject(
-      fn!isnull,
-      a!forEach(
-        items: local!woEntriesAllDays,
-        expression: if(
-          a!isNullOrEmpty(index(fv!item, "payrollOverrideDays", null)),
-          null,
-          fv!index
-        )
-      )
-    ),
-    1,
-    null
-  ),
-  /* Default = whole week (same as online) */
-  local!overrideDays: if(
-    isnull(local!savedDayIdx),
-    local!dayIdxs,
-    tointeger(
-      index(
-        index(local!woEntriesAllDays, local!savedDayIdx, null),
-        "payrollOverrideDays",
-        {}
-      )
-    )
-  ),
-  /* What is shown: exactly the saved selection (the day being edited is always applied by the utils) */
-  local!appliedDays: local!overrideDays,
-  local!appliedDaysText: if(
-    length(local!appliedDays) >= count(local!dayIdxs),
-    "Whole week",
-    joinarray(
-      reject(
-        fn!isnull,
-        a!forEach(
-          items: local!dayIdxs,
-          expression: if(
-            contains(local!appliedDays, fv!item),
-            index(local!dayLabels, fv!item, "Day " & fv!item),
-            null
-          )
-        )
-      ),
-      ", "
-    )
-  ),
-  /* UI only: whether the day checkboxes are open */
-  local!showDayPicker: false(),
 
   {
     /* ---------- WEEKLY: PAYROLL OVERRIDE DAYS (visible on every tab) ---------- */
-    a!cardLayout(
-      shape: "ROUNDED",
-      padding: "LESS",
-      marginBelow: "STANDARD",
-      style: cons!ATE_TXT_HEX_CARD_STYLE_SHADED & "50",
-      showWhen: and(
+    if(
+      and(
         a!defaultValue(ri!isWeekly, false()),
         or(local!poShow, local!epShow)
       ),
-      contents: {
-        a!sideBySideLayout(
-          alignVertical: "MIDDLE",
-          items: {
-            a!sideBySideItem(
-              item: a!richTextDisplayField(
-                labelPosition: "COLLAPSED",
-                value: {
-                  a!richTextItem(
-                    text: "Payroll override applies to: ",
-                    style: "STRONG",
-                    size: "SMALL"
-                  ),
-                  a!richTextItem(
-                    text: if(local!showDayPicker, "", local!appliedDaysText),
-                    size: "SMALL"
-                  )
-                }
-              )
-            ),
-            a!sideBySideItem(
-              width: "MINIMIZE",
-              item: a!richTextDisplayField(
-                labelPosition: "COLLAPSED",
-                value: a!richTextItem(
-                  text: if(local!showDayPicker, "Done", "Change"),
-                  style: "STRONG",
-                  size: "SMALL",
-                  color: cons!ROME_TEXT_HEX_ORANGE,
-                  linkStyle: "STANDALONE",
-                  link: a!dynamicLink(
-                    value: not(local!showDayPicker),
-                    saveInto: local!showDayPicker
-                  )
-                )
-              )
-            )
-          }
-        ),
-        a!checkboxField(
-          labelPosition: "COLLAPSED",
-          helpTooltip: "Category and rate changes are applied to the selected days for the same employee or equipment on this work order. Changes always apply to the day you are editing, plus the days ticked here.",
-          choiceLabels: a!forEach(
-            items: local!dayIdxs,
-            expression: index(local!dayLabels, fv!item, "Day " & fv!item)
-          ),
-          choiceValues: local!dayIdxs,
-          choiceLayout: "COMPACT",
-          value: local!appliedDays,
-          /* store the selection on this work order for every day of the week */
-          saveInto: a!save(
-            ri!weekCrewData,
-            a!forEach(
-              items: ri!weekCrewData,
-              expression: a!update(
-                data: fv!item,
-                index: "woCrewData",
-                value: a!forEach(
-                  items: index(fv!item, "woCrewData", {}),
-                  expression: if(
-                    tostring(index(fv!item, "workOrderNumber", "")) = local!thisWoNumber,
-                    a!update(
-                      data: fv!item,
-                      index: "payrollOverrideDays",
-                      /* nothing ticked = only the day being edited */
-                      value: if(
-                        a!isNullOrEmpty(save!value),
-                        tointeger(ri!selectedDay),
-                        tointeger(save!value)
-                      )
-                    ),
-                    fv!item
-                  )
-                )
-              )
-            )
-          ),
-          showWhen: local!showDayPicker
-        )
-      }
+      rule!ATE_SEC_offlinePayrollOverrideDays(
+        weekCrewData: ri!weekCrewData,
+        woNumber: tostring(index(ri!woItem, "workOrderNumber", "")),
+        selectedDay: ri!selectedDay
+      ),
+      {}
     ),
     /*SECTION  */
     a!sectionLayout(
