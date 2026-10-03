@@ -69,8 +69,146 @@ a!localVariables(
   ),
   local!epOptionIds: tointeger(index(local!epOptions, "id", {})),
 
-  /*SECTION  */
-  a!sectionLayout(
+  /* ---------- WEEKLY: DAYS THAT PAYROLL OVERRIDE EDITS APPLY TO ---------- */
+  /* Stored on this work order in weekCrewData (key "payrollOverrideDays") so saves never reset it */
+  /* Assumes weekCrewData is ordered Sun (1) .. Sat (7) */
+  local!dayLabels: { "Sun", "Mon", "Tues", "Wed", "Thurs", "Fri", "Sat" },
+  local!dayIdxs: enumerate(count(ri!weekCrewData)) + 1,
+  local!thisWoNumber: tostring(index(ri!woItem, "workOrderNumber", "")),
+  local!savedDays: if(
+    a!defaultValue(ri!isWeekly, false()),
+    index(
+      index(
+        index(index(ri!weekCrewData, ri!selectedDay, {}), "woCrewData", {}),
+        ri!woIndex,
+        {}
+      ),
+      "payrollOverrideDays",
+      null
+    ),
+    null
+  ),
+  /* Default = whole week (same as online) */
+  local!overrideDays: if(
+    a!isNullOrEmpty(local!savedDays),
+    local!dayIdxs,
+    tointeger(local!savedDays)
+  ),
+  /* The day being edited is always included */
+  local!appliedDays: union(
+    tointeger(ri!selectedDay),
+    tointeger(local!overrideDays)
+  ),
+  local!appliedDaysText: if(
+    length(local!appliedDays) >= count(local!dayIdxs),
+    "Whole week",
+    joinarray(
+      reject(
+        fn!isnull,
+        a!forEach(
+          items: local!dayIdxs,
+          expression: if(
+            contains(local!appliedDays, fv!item),
+            index(local!dayLabels, fv!item, "Day " & fv!item),
+            null
+          )
+        )
+      ),
+      ", "
+    )
+  ),
+  /* UI only: whether the day checkboxes are open */
+  local!showDayPicker: false(),
+
+  {
+    /* ---------- WEEKLY: PAYROLL OVERRIDE DAYS (visible on every tab) ---------- */
+    a!cardLayout(
+      shape: "ROUNDED",
+      padding: "LESS",
+      marginBelow: "STANDARD",
+      style: cons!ATE_TXT_HEX_CARD_STYLE_SHADED & "50",
+      showWhen: and(
+        a!defaultValue(ri!isWeekly, false()),
+        or(local!poShow, local!epShow)
+      ),
+      contents: {
+        a!sideBySideLayout(
+          alignVertical: "MIDDLE",
+          items: {
+            a!sideBySideItem(
+              item: a!richTextDisplayField(
+                labelPosition: "COLLAPSED",
+                value: {
+                  a!richTextItem(
+                    text: "Payroll override applies to: ",
+                    style: "STRONG",
+                    size: "SMALL"
+                  ),
+                  a!richTextItem(
+                    text: if(local!showDayPicker, "", local!appliedDaysText),
+                    size: "SMALL"
+                  )
+                }
+              )
+            ),
+            a!sideBySideItem(
+              width: "MINIMIZE",
+              item: a!richTextDisplayField(
+                labelPosition: "COLLAPSED",
+                value: a!richTextItem(
+                  text: if(local!showDayPicker, "Done", "Change"),
+                  style: "STRONG",
+                  size: "SMALL",
+                  color: cons!ROME_TEXT_HEX_ORANGE,
+                  linkStyle: "STANDALONE",
+                  link: a!dynamicLink(
+                    value: not(local!showDayPicker),
+                    saveInto: local!showDayPicker
+                  )
+                )
+              )
+            )
+          }
+        ),
+        a!checkboxField(
+          labelPosition: "COLLAPSED",
+          helpTooltip: "Category and rate changes are applied to the selected days for the same employee or equipment on this work order. The current day is always included.",
+          choiceLabels: a!forEach(
+            items: local!dayIdxs,
+            expression: index(local!dayLabels, fv!item, "Day " & fv!item)
+          ),
+          choiceValues: local!dayIdxs,
+          choiceLayout: "COMPACT",
+          value: local!appliedDays,
+          /* store the selection on this work order for every day of the week */
+          saveInto: a!save(
+            ri!weekCrewData,
+            a!forEach(
+              items: ri!weekCrewData,
+              expression: a!update(
+                data: fv!item,
+                index: "woCrewData",
+                value: a!forEach(
+                  items: index(fv!item, "woCrewData", {}),
+                  expression: if(
+                    tostring(index(fv!item, "workOrderNumber", "")) = local!thisWoNumber,
+                    a!update(
+                      data: fv!item,
+                      index: "payrollOverrideDays",
+                      value: tointeger(save!value)
+                    ),
+                    fv!item
+                  )
+                )
+              )
+            )
+          ),
+          showWhen: local!showDayPicker
+        )
+      }
+    ),
+    /*SECTION  */
+    a!sectionLayout(
     label: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{388c7775-5202-4e98-b794-8b35d64f0f69}People',
     labelSize: "SMALL",
     labelColor: ri!brandingMap.headingLabelColor,
@@ -1254,7 +1392,7 @@ a!localVariables(
                               value: save!value,
                               options: local!poOptions,
                               canCustomizeRate: local!poCanCustomize,
-                              targetDays: ri!overrideDays
+                              targetDays: local!overrideDays
                             )
                           ),
                           a!save(
@@ -1302,7 +1440,7 @@ a!localVariables(
                                       1,
                                       null
                                     ),
-                                    targetDays: ri!overrideDays
+                                    targetDays: local!overrideDays
                                   )
                                 ),
                                 a!save(
@@ -1354,7 +1492,7 @@ a!localVariables(
                                   1,
                                   null
                                 ),
-                                targetDays: ri!overrideDays
+                                targetDays: local!overrideDays
                               )
                             ),
                             a!save(
@@ -1409,7 +1547,7 @@ a!localVariables(
                               laborIndex: local!lIndex,
                               action: "EMPLOYEE_RATE",
                               value: save!value,
-                              targetDays: ri!overrideDays
+                              targetDays: local!overrideDays
                             )
                           ),
                           a!save(
@@ -1544,7 +1682,7 @@ a!localVariables(
                                               action: "HOURTYPE_RATE",
                                               value: save!value,
                                               hourTypeId: local!htId,
-                                              targetDays: ri!overrideDays
+                                              targetDays: local!overrideDays
                                             )
                                           ),
                                           a!save(
@@ -2235,7 +2373,7 @@ a!localVariables(
                               action: "CATEGORY",
                               value: save!value,
                               options: local!epOptions,
-                              targetDays: ri!overrideDays
+                              targetDays: local!overrideDays
                             )
                           ),
                           a!save(
@@ -2274,7 +2412,7 @@ a!localVariables(
                                 1,
                                 null
                               ),
-                              targetDays: ri!overrideDays
+                              targetDays: local!overrideDays
                             )
                           ),
                           a!save(
@@ -2324,7 +2462,7 @@ a!localVariables(
                               equipmentIndex: local!eIndex,
                               action: "RATE",
                               value: save!value,
-                              targetDays: ri!overrideDays
+                              targetDays: local!overrideDays
                             )
                           ),
                           a!save(
@@ -2511,4 +2649,5 @@ a!localVariables(
       )
     }
   )
+  }
 )
