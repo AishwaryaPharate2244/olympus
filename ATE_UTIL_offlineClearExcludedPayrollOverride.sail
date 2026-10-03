@@ -1,13 +1,11 @@
 /*
   ATE_UTIL_offlineClearExcludedPayrollOverride
-  For each day of the week: if a work order's "payrollOverrideDays" does NOT include that day,
-  remove the payroll override from all of its labor and equipment rows on that day.
-  Work orders with no saved selection are left as they are (= whole week).
+  On each day that a work order has NOT selected in "payrollOverrideDays",
+  set its labor and equipment payroll override (category + rate) to null.
 
-  Rule inputs:
-    weekData  (Any Type)  the 7 day maps, ordered Sun (1) .. Sat (7)
-    woKey     (Text)      name of the work order list in a day map:
-                          "woCrewData" on the screen, "workOrderData" in the final map
+  Inputs:
+    weekData (Any Type) : the 7 day maps, Sun (1) .. Sat (7)
+    woKey    (Text)     : "woCrewData" (screen) or "workOrderData" (final map)
 */
 a!forEach(
   items: ri!weekData,
@@ -19,31 +17,38 @@ a!forEach(
       value: a!forEach(
         items: index(fv!item, ri!woKey, {}),
         expression: a!localVariables(
-          local!selectedDays: tointeger(index(fv!item, "payrollOverrideDays", {})),
-          local!isExcluded: and(
-            a!isNotNullOrEmpty(local!selectedDays),
-            not(contains(local!selectedDays, local!day))
-          ),
+          local!days: tointeger(index(fv!item, "payrollOverrideDays", {})),
           if(
-            local!isExcluded,
-            /* excluded day: clear every labor and equipment row */
+            /* nothing saved, or this day is selected: keep as it is */
+            or(a!isNullOrEmpty(local!days), contains(local!days, local!day)),
+            fv!item,
+            /* day not selected: clear labor and equipment */
             a!update(
               data: a!update(
                 data: fv!item,
                 index: "labors",
                 value: a!forEach(
                   items: index(fv!item, "labors", {}),
-                  expression: rule!ATE_UTIL_offlineClearLaborPayrollOverride(labor: fv!item)
+                  expression: a!update(
+                    data: a!update(data: fv!item, index: "payrollConfigOverrideId", value: null),
+                    index: "hourTypes",
+                    value: a!forEach(
+                      items: index(fv!item, "hourTypes", {}),
+                      expression: a!update(data: fv!item, index: "payrollOverrideRate", value: null)
+                    )
+                  )
                 )
               ),
               index: "equipments",
               value: a!forEach(
                 items: index(fv!item, "equipments", {}),
-                expression: rule!ATE_UTIL_offlineClearEquipmentPayrollOverride(equipment: fv!item)
+                expression: a!update(
+                  data: a!update(data: fv!item, index: "payrollConfigOverrideId", value: null),
+                  index: "payrollOverrideRate",
+                  value: null
+                )
               )
-            ),
-            /* included day: keep as it is */
-            fv!item
+            )
           )
         )
       )
