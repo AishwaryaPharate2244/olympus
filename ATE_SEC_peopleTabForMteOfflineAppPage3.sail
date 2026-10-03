@@ -75,30 +75,57 @@ a!localVariables(
   local!dayLabels: { "Sun", "Mon", "Tues", "Wed", "Thurs", "Fri", "Sat" },
   local!dayIdxs: enumerate(count(ri!weekCrewData)) + 1,
   local!thisWoNumber: tostring(index(ri!woItem, "workOrderNumber", "")),
-  local!savedDays: if(
+  /* This work order's entry on each day of the week (null if the WO is not on that day) */
+  local!woEntriesAllDays: if(
     a!defaultValue(ri!isWeekly, false()),
-    index(
-      index(
-        index(index(ri!weekCrewData, ri!selectedDay, {}), "woCrewData", {}),
-        ri!woIndex,
-        {}
-      ),
-      "payrollOverrideDays",
-      null
+    a!forEach(
+      items: ri!weekCrewData,
+      expression: index(
+        index(
+          index(fv!item, "woCrewData", {}),
+          wherecontains(
+            local!thisWoNumber,
+            touniformstring(index(index(fv!item, "woCrewData", {}), "workOrderNumber", {}))
+          ),
+          {}
+        ),
+        1,
+        null
+      )
     ),
+    {}
+  ),
+  /* First day that has a saved selection (all days hold the same value; reading any day
+     keeps it safe if one day's entry gets rebuilt by another save) */
+  local!savedDayIdx: index(
+    reject(
+      fn!isnull,
+      a!forEach(
+        items: local!woEntriesAllDays,
+        expression: if(
+          a!isNullOrEmpty(index(fv!item, "payrollOverrideDays", null)),
+          null,
+          fv!index
+        )
+      )
+    ),
+    1,
     null
   ),
   /* Default = whole week (same as online) */
   local!overrideDays: if(
-    a!isNullOrEmpty(local!savedDays),
+    isnull(local!savedDayIdx),
     local!dayIdxs,
-    tointeger(local!savedDays)
+    tointeger(
+      index(
+        index(local!woEntriesAllDays, local!savedDayIdx, null),
+        "payrollOverrideDays",
+        {}
+      )
+    )
   ),
-  /* The day being edited is always included */
-  local!appliedDays: union(
-    tointeger(ri!selectedDay),
-    tointeger(local!overrideDays)
-  ),
+  /* What is shown: exactly the saved selection (the day being edited is always applied by the utils) */
+  local!appliedDays: local!overrideDays,
   local!appliedDaysText: if(
     length(local!appliedDays) >= count(local!dayIdxs),
     "Whole week",
@@ -172,7 +199,7 @@ a!localVariables(
         ),
         a!checkboxField(
           labelPosition: "COLLAPSED",
-          helpTooltip: "Category and rate changes are applied to the selected days for the same employee or equipment on this work order. The current day is always included.",
+          helpTooltip: "Category and rate changes are applied to the selected days for the same employee or equipment on this work order. Changes always apply to the day you are editing, plus the days ticked here.",
           choiceLabels: a!forEach(
             items: local!dayIdxs,
             expression: index(local!dayLabels, fv!item, "Day " & fv!item)
@@ -195,7 +222,12 @@ a!localVariables(
                     a!update(
                       data: fv!item,
                       index: "payrollOverrideDays",
-                      value: tointeger(save!value)
+                      /* nothing ticked = only the day being edited */
+                      value: if(
+                        a!isNullOrEmpty(save!value),
+                        tointeger(ri!selectedDay),
+                        tointeger(save!value)
+                      )
                     ),
                     fv!item
                   )
