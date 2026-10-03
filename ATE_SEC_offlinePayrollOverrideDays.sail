@@ -3,7 +3,7 @@
   Weekly view: "Payroll override applies to" card with one tappable chip per day.
   Shown inside each employee's / equipment's Payroll Override section, so every
   row has its own days (same as online: override is per employee / per equipment).
-  Filled = included, outlined = excluded. The chips always show the saved selection;
+  Checked box = included, empty box = excluded. The days always show the saved selection;
   the day being viewed is only marked, never forced on.
 
   How it behaves:
@@ -97,40 +97,49 @@ a!localVariables(
           )
         }
       ),
-      a!buttonArrayLayout(
-        align: "START",
-        marginBelow: "NONE",
-        buttons: a!forEach(
+      /* One small line of day links: checked box = included, empty box = excluded */
+      a!richTextDisplayField(
+        labelPosition: "COLLAPSED",
+        marginAbove: "LESS",
+        value: a!forEach(
           items: local!dayIdxs,
           expression: a!localVariables(
             local!day: fv!item,
             local!isCurrent: fv!item = ri!selectedDay,
             local!isOn: contains(tointeger(local!days), fv!item),
-            /* the selection after tapping this chip: remove the day if it is on, add it if it is off */
+            /* the selection after tapping this day: remove the day if it is on, add it if it is off */
             local!daysAfterTap: if(
               local!isOn,
               difference(tointeger(local!days), tointeger(local!day)),
               append(tointeger(local!days), tointeger(local!day))
             ),
-            a!buttonWidget(
-              /* the day being viewed is marked with a dot */
-              label: index(local!dayLabels, fv!item, "Day " & fv!item) & if(local!isCurrent, " •", ""),
-              size: "SMALL",
-              style: if(local!isOn, "SOLID", "OUTLINE"),
-              color: cons!ROME_TEXT_HEX_ORANGE,
-              tooltip: if(local!isCurrent, "Day you are viewing. ", "") & if(local!isOn, "Tap to exclude", "Tap to include"),
-              saveInto: a!save(
-                ri!weekCrewData,
-                rule!ATE_UTIL_offlineSetPayrollOverrideDays(
-                  weekCrewData: ri!weekCrewData,
-                  woNumber: ri!woNumber,
-                  rowKey: ri!rowKey,
-                  rowId: ri!rowId,
-                  /* nothing selected is saved as {0}; an empty list would mean "whole week" */
-                  days: if(a!isNullOrEmpty(local!daysAfterTap), { 0 }, local!daysAfterTap)
+            {
+              a!richTextItem(
+                text: {
+                  a!richTextIcon(icon: if(local!isOn, "check-square", "square-o")),
+                  " " & index(local!dayLabels, fv!item, "Day " & fv!item)
+                },
+                size: "SMALL",
+                color: if(local!isOn, cons!ROME_TEXT_HEX_ORANGE, "SECONDARY"),
+                /* the day being viewed is underlined */
+                style: if(local!isCurrent, { "STRONG", "UNDERLINE" }, "PLAIN"),
+                linkStyle: "STANDALONE",
+                link: a!dynamicLink(
+                  saveInto: a!save(
+                    ri!weekCrewData,
+                    rule!ATE_UTIL_offlineSetPayrollOverrideDays(
+                      weekCrewData: ri!weekCrewData,
+                      woNumber: ri!woNumber,
+                      rowKey: ri!rowKey,
+                      rowId: ri!rowId,
+                      /* nothing selected is saved as {0}; an empty list would mean "whole week" */
+                      days: if(a!isNullOrEmpty(local!daysAfterTap), { 0 }, local!daysAfterTap)
+                    )
+                  )
                 )
-              )
-            )
+              ),
+              "     "
+            }
           )
         )
       )
