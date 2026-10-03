@@ -17,7 +17,7 @@ a!forEach(
     value: a!forEach(
       items: index(fv!item, "woCrewData", {}),
       expression: if(
-        tostring(index(fv!item, "workOrderNumber", "")) = tostring(ri!woNumber),
+        trim(tostring(index(fv!item, "workOrderNumber", ""))) = trim(tostring(ri!woNumber)),
         a!update(
           data: fv!item,
           index: "payrollOverrideDays",

@@ -9,31 +9,30 @@
     woNumber      (Text)
 */
 a!localVariables(
-  /* Saved value on each day for this work order (null where not saved) */
-  local!savedPerDay: a!forEach(
+  /* This work order's entry on each day (one map or null per day - maps do not get flattened) */
+  local!woEntries: a!forEach(
     items: a!defaultValue(ri!weekCrewData, {}),
     expression: index(
       index(
-        index(
-          index(fv!item, "woCrewData", {}),
-          wherecontains(
-            tostring(ri!woNumber),
-            touniformstring(index(index(fv!item, "woCrewData", {}), "workOrderNumber", {}))
-          ),
-          {}
+        index(fv!item, "woCrewData", {}),
+        wherecontains(
+          trim(tostring(ri!woNumber)),
+          trim(touniformstring(index(index(fv!item, "woCrewData", {}), "workOrderNumber", {})))
         ),
-        1,
-        null
+        {}
       ),
-      "payrollOverrideDays",
+      1,
       null
     )
   ),
-  /* First day that has a saved value (all days hold the same value) */
+  /* First day whose entry has a saved selection (all days hold the same value) */
   local!firstSavedDay: index(
     wherecontains(
       true(),
-      a!forEach(items: local!savedPerDay, expression: a!isNotNullOrEmpty(fv!item))
+      a!forEach(
+        items: local!woEntries,
+        expression: a!isNotNullOrEmpty(index(fv!item, "payrollOverrideDays", null))
+      )
     ),
     1,
     null
@@ -41,6 +40,12 @@ a!localVariables(
   if(
     isnull(local!firstSavedDay),
     enumerate(count(a!defaultValue(ri!weekCrewData, {}))) + 1,
-    tointeger(index(local!savedPerDay, local!firstSavedDay, {}))
+    tointeger(
+      index(
+        index(local!woEntries, local!firstSavedDay, null),
+        "payrollOverrideDays",
+        {}
+      )
+    )
   )
 )
