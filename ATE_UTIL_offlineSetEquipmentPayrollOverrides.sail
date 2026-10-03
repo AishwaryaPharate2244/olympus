@@ -9,22 +9,6 @@ a!localVariables(
     {}
   ),
   local!row: index(index(local!wo, "equipments", {}), ri!equipmentIndex, {}),
-  local!rate: if(
-    a!isNullOrEmpty(ri!value),
-    null,
-    if(
-      ri!action = "CATEGORY",
-      todecimal(
-        displayvalue(
-          tointeger(ri!value),
-          tointeger(index(ri!options, "id", {})),
-          index(ri!options, "rate", {}),
-          null
-        )
-      ),
-      round(todecimal(ri!value), 2)
-    )
-  ),
   if(
     not(a!defaultValue(ri!isWeekly, false())),
     updatearray(
@@ -37,13 +21,9 @@ a!localVariables(
           index(local!wo, "equipments", {}),
           ri!equipmentIndex,
           a!update(
-            data: if(
-              ri!action = "CATEGORY",
-              a!update(data: local!row, index: "payrollConfigOverrideId", value: tointeger(ri!value)),
-              local!row
-            ),
+            data: a!update(data: local!row, index: "payrollConfigOverrideId", value: tointeger(ri!categoryId)),
             index: "payrollOverrideRate",
-            value: local!rate
+            value: if(a!isNullOrEmpty(ri!rate), null, round(todecimal(ri!rate), 2))
           )
         )
       )
@@ -93,13 +73,9 @@ a!localVariables(
                           )
                         ),
                         a!update(
-                          data: if(
-                            ri!action = "CATEGORY",
-                            a!update(data: fv!item, index: "payrollConfigOverrideId", value: tointeger(ri!value)),
-                            fv!item
-                          ),
+                          data: a!update(data: fv!item, index: "payrollConfigOverrideId", value: tointeger(ri!categoryId)),
                           index: "payrollOverrideRate",
-                          value: local!rate
+                          value: if(a!isNullOrEmpty(ri!rate), null, round(todecimal(ri!rate), 2))
                         ),
                         fv!item
                       )

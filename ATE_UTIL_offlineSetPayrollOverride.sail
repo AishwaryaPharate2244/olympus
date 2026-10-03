@@ -22,11 +22,9 @@ a!localVariables(
           ri!laborIndex,
           rule!ATE_UTIL_offlineapplypayrolloverride(
             laborRow: local!row,
-            action: ri!action,
-            value: ri!value,
-            hourTypeId: ri!hourTypeId,
-            options: ri!options,
-            canCustomizeRate: ri!canCustomizeRate
+            categoryId: ri!categoryId,
+            rate: ri!rate,
+            hourTypeId: ri!hourTypeId
           )
         )
       )
@@ -67,11 +65,9 @@ a!localVariables(
                         ),
                         rule!ATE_UTIL_offlineapplypayrolloverride(
                           laborRow: fv!item,
-                          action: ri!action,
-                          value: ri!value,
-                          hourTypeId: ri!hourTypeId,
-                          options: ri!options,
-                          canCustomizeRate: ri!canCustomizeRate
+                          categoryId: ri!categoryId,
+                          rate: ri!rate,
+                          hourTypeId: ri!hourTypeId
                         ),
                         fv!item
                       )
