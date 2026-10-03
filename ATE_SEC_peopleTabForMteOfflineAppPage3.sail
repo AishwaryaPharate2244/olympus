@@ -69,25 +69,22 @@ a!localVariables(
   ),
   local!epOptionIds: tointeger(index(local!epOptions, "id", {})),
 
-  /* ---------- WEEKLY: DAYS THAT PAYROLL OVERRIDE EDITS APPLY TO ---------- */
-  /* Viewed day highlighted     -> edits apply to all highlighted days
-     Viewed day not highlighted -> edits apply to the viewed day only */
+  /* ---------- WEEKLY: DAYS THAT GET PAYROLL OVERRIDE ---------- */
+  /* Highlighted days get the override; edits apply to all of them.
+     Days not highlighted get no override (fields hidden there). */
   local!overrideDays: if(
     a!defaultValue(ri!isWeekly, false()),
-    a!localVariables(
-      local!savedDays: tointeger(
-        rule!ATE_UTIL_offlineGetPayrollOverrideDays(
-          weekCrewData: ri!weekCrewData,
-          woNumber: tostring(index(ri!woItem, "workOrderNumber", ""))
-        )
-      ),
-      if(
-        contains(local!savedDays, tointeger(ri!selectedDay)),
-        local!savedDays,
-        tointeger(ri!selectedDay)
+    tointeger(
+      rule!ATE_UTIL_offlineGetPayrollOverrideDays(
+        weekCrewData: ri!weekCrewData,
+        woNumber: tostring(index(ri!woItem, "workOrderNumber", ""))
       )
     ),
     {}
+  ),
+  local!overrideActiveToday: or(
+    not(a!defaultValue(ri!isWeekly, false())),
+    contains(local!overrideDays, tointeger(ri!selectedDay))
   ),
 
   {
@@ -1261,7 +1258,7 @@ a!localVariables(
                   isCollapsible: true,
                   isInitiallyCollapsed: a!isNullOrEmpty(local!poCategoryId),
                   marginAbove: "STANDARD",
-                  showWhen: local!poShow,
+                  showWhen: and(local!poShow, local!overrideActiveToday),
                   contents: {
                     a!dropdownField(
                       label: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{5d3a3777-9011-4e30-814b-4cbdd3faabb2}Job Category Override for Payroll',
@@ -2244,7 +2241,7 @@ a!localVariables(
                   isCollapsible: true,
                   isInitiallyCollapsed: a!isNullOrEmpty(local!epCategoryId),
                   marginAbove: "STANDARD",
-                  showWhen: local!epShow,
+                  showWhen: and(local!epShow, local!overrideActiveToday),
                   contents: {
                     a!dropdownField(
                       label: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{3779d42f-c2b4-451f-a2a1-9c03215e1927}Payroll Override Category',

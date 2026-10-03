@@ -4,9 +4,10 @@
   Filled = included, outlined = excluded. The chips always show the saved selection;
   the day being viewed is only marked, never forced on.
 
-  How edits behave (applied in ATE_SEC_peopleTabForMteOfflineAppPage3):
-    viewed day is highlighted     -> change applies to all highlighted days
-    viewed day is not highlighted -> change applies to the viewed day only
+  How it behaves:
+    highlighted days     -> category / rate edits apply to all highlighted days
+    not highlighted days -> payroll override is null (fields hidden on that day)
+    including a day      -> values are copied from an already highlighted day
 
   Rule inputs:
     weekCrewData  (Any Type)  saved into
@@ -51,8 +52,8 @@ a!localVariables(
                 a!richTextItem(
                   text: if(
                     local!currentIsIncluded,
-                    "Changes made on " & local!currentLabel & " apply to all highlighted days.",
-                    local!currentLabel & " is not highlighted – changes made on " & local!currentLabel & " apply to " & local!currentLabel & " only."
+                    "Category and rate changes apply to all highlighted days. Days not highlighted get no payroll override.",
+                    "Payroll override is not applied on " & local!currentLabel & ". Tap " & local!currentLabel & " to include it."
                   ),
                   color: "SECONDARY",
                   size: "SMALL"
@@ -79,7 +80,8 @@ a!localVariables(
                       rule!ATE_UTIL_offlineSetPayrollOverrideDays(
                         weekCrewData: ri!weekCrewData,
                         woNumber: ri!woNumber,
-                        days: local!dayIdxs
+                        days: local!dayIdxs,
+                        previousDays: local!days
                       )
                     )
                   )
@@ -110,6 +112,7 @@ a!localVariables(
                 rule!ATE_UTIL_offlineSetPayrollOverrideDays(
                   weekCrewData: ri!weekCrewData,
                   woNumber: ri!woNumber,
+                  previousDays: local!days,
                   days: a!localVariables(
                     local!newDays: if(
                       local!isOn,
