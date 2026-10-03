@@ -6,8 +6,7 @@
 
   How it behaves:
     highlighted days     -> category / rate edits apply to all highlighted days
-    not highlighted days -> payroll override is null (fields hidden on that day)
-    including a day      -> values are copied from an already highlighted day
+    not highlighted days -> no payroll override (cleared, fields hidden on that day)
 
   Rule inputs:
     weekCrewData  (Any Type)  saved into
@@ -80,8 +79,7 @@ a!localVariables(
                       rule!ATE_UTIL_offlineSetPayrollOverrideDays(
                         weekCrewData: ri!weekCrewData,
                         woNumber: ri!woNumber,
-                        days: local!dayIdxs,
-                        previousDays: local!days
+                        days: local!dayIdxs
                       )
                     )
                   )
@@ -100,6 +98,12 @@ a!localVariables(
             local!day: fv!item,
             local!isCurrent: fv!item = ri!selectedDay,
             local!isOn: contains(tointeger(local!days), fv!item),
+            /* the selection after tapping this chip: remove the day if it is on, add it if it is off */
+            local!daysAfterTap: if(
+              local!isOn,
+              difference(tointeger(local!days), tointeger(local!day)),
+              append(tointeger(local!days), tointeger(local!day))
+            ),
             a!buttonWidget(
               /* the day being viewed is marked with a dot */
               label: index(local!dayLabels, fv!item, "Day " & fv!item) & if(local!isCurrent, " •", ""),
@@ -112,16 +116,8 @@ a!localVariables(
                 rule!ATE_UTIL_offlineSetPayrollOverrideDays(
                   weekCrewData: ri!weekCrewData,
                   woNumber: ri!woNumber,
-                  previousDays: local!days,
-                  days: a!localVariables(
-                    local!newDays: if(
-                      local!isOn,
-                      difference(tointeger(local!days), tointeger(local!day)),
-                      append(tointeger(local!days), tointeger(local!day))
-                    ),
-                    /* nothing highlighted is stored as {0} ("no days"); an empty list would mean "whole week" */
-                    if(a!isNullOrEmpty(local!newDays), { 0 }, local!newDays)
-                  )
+                  /* nothing selected is saved as {0}; an empty list would mean "whole week" */
+                  days: if(a!isNullOrEmpty(local!daysAfterTap), { 0 }, local!daysAfterTap)
                 )
               )
             )
