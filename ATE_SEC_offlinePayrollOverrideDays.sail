@@ -1,16 +1,20 @@
 /*
   ATE_SEC_offlinePayrollOverrideDays
   Weekly view: "Payroll override applies to" card with one tappable chip per day.
+  Shown inside each employee's / equipment's Payroll Override section, so every
+  row has its own days (same as online: override is per employee / per equipment).
   Filled = included, outlined = excluded. The chips always show the saved selection;
   the day being viewed is only marked, never forced on.
 
   How it behaves:
-    highlighted days     -> category / rate edits apply to all highlighted days
-    not highlighted days -> no payroll override (cleared, fields hidden on that day)
+    highlighted days     -> this row's category / rate edits apply to all highlighted days
+    not highlighted days -> no payroll override for this row (cleared, fields hidden on that day)
 
   Rule inputs:
     weekCrewData  (Any Type)  saved into
     woNumber      (Text)
+    rowKey        (Text)     "labors" or "equipments"
+    rowId         (Text)     employeeId or equipmentId
     selectedDay   (Integer)
 */
 a!localVariables(
@@ -19,7 +23,9 @@ a!localVariables(
   local!dayLabels: { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" },
   local!days: rule!ATE_UTIL_offlineGetPayrollOverrideDays(
     weekCrewData: ri!weekCrewData,
-    woNumber: ri!woNumber
+    woNumber: ri!woNumber,
+    rowKey: ri!rowKey,
+    rowId: ri!rowId
   ),
   local!isWholeWeek: length(intersection(tointeger(local!days), local!dayIdxs)) >= count(local!dayIdxs),
   local!currentLabel: index(local!dayLabels, ri!selectedDay, "this day"),
@@ -51,8 +57,8 @@ a!localVariables(
                 a!richTextItem(
                   text: if(
                     local!currentIsIncluded,
-                    "Category and rate changes apply to all highlighted days. Days not highlighted get no payroll override.",
-                    "Payroll override is not applied on " & local!currentLabel & ". Tap " & local!currentLabel & " to include it."
+                    "Category and rate below apply to the highlighted days only.",
+                    "No payroll override on " & local!currentLabel & ". Tap " & local!currentLabel & " to include it."
                   ),
                   color: "SECONDARY",
                   size: "SMALL"
@@ -79,6 +85,8 @@ a!localVariables(
                       rule!ATE_UTIL_offlineSetPayrollOverrideDays(
                         weekCrewData: ri!weekCrewData,
                         woNumber: ri!woNumber,
+                        rowKey: ri!rowKey,
+                        rowId: ri!rowId,
                         days: local!dayIdxs
                       )
                     )
@@ -116,6 +124,8 @@ a!localVariables(
                 rule!ATE_UTIL_offlineSetPayrollOverrideDays(
                   weekCrewData: ri!weekCrewData,
                   woNumber: ri!woNumber,
+                  rowKey: ri!rowKey,
+                  rowId: ri!rowId,
                   /* nothing selected is saved as {0}; an empty list would mean "whole week" */
                   days: if(a!isNullOrEmpty(local!daysAfterTap), { 0 }, local!daysAfterTap)
                 )

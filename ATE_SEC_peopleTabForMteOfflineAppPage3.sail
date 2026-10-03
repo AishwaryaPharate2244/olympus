@@ -69,38 +69,7 @@ a!localVariables(
   ),
   local!epOptionIds: tointeger(index(local!epOptions, "id", {})),
 
-  /* ---------- WEEKLY: DAYS THAT GET PAYROLL OVERRIDE ---------- */
-  /* Highlighted days get the override; edits apply to all of them.
-     Days not highlighted get no override (fields hidden there). */
-  local!overrideDays: if(
-    a!defaultValue(ri!isWeekly, false()),
-    tointeger(
-      rule!ATE_UTIL_offlineGetPayrollOverrideDays(
-        weekCrewData: ri!weekCrewData,
-        woNumber: tostring(index(ri!woItem, "workOrderNumber", ""))
-      )
-    ),
-    {}
-  ),
-  local!overrideActiveToday: or(
-    not(a!defaultValue(ri!isWeekly, false())),
-    contains(local!overrideDays, tointeger(ri!selectedDay))
-  ),
-
   {
-    /* ---------- WEEKLY: PAYROLL OVERRIDE DAYS (visible on every tab) ---------- */
-    if(
-      and(
-        a!defaultValue(ri!isWeekly, false()),
-        or(local!poShow, local!epShow)
-      ),
-      rule!ATE_SEC_offlinePayrollOverrideDays(
-        weekCrewData: ri!weekCrewData,
-        woNumber: tostring(index(ri!woItem, "workOrderNumber", "")),
-        selectedDay: ri!selectedDay
-      ),
-      {}
-    ),
     /*SECTION  */
     a!sectionLayout(
     label: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{388c7775-5202-4e98-b794-8b35d64f0f69}People',
@@ -1240,6 +1209,23 @@ a!localVariables(
                   ri!weekCrewData[ri!selectedDay].woCrewData[ri!woIndex].labors[local!lIndex],
                   ri!woCrewData[ri!woIndex].labors[local!lIndex]
                 ),
+                /* Weekly: days this row gets payroll override (empty = not weekly) */
+                local!poDays: if(
+                  a!defaultValue(ri!isWeekly, false()),
+                  tointeger(
+                    rule!ATE_UTIL_offlineGetPayrollOverrideDays(
+                      weekCrewData: ri!weekCrewData,
+                      woNumber: tostring(index(ri!woItem, "workOrderNumber", "")),
+                      rowKey: "labors",
+                      rowId: tostring(index(local!poRow, "employeeId", ""))
+                    )
+                  ),
+                  {}
+                ),
+                local!poActiveToday: or(
+                  not(a!defaultValue(ri!isWeekly, false())),
+                  contains(local!poDays, tointeger(ri!selectedDay))
+                ),
                 local!poCategoryId: tointeger(
                   index(local!poRow, "payrollConfigOverrideId", null)
                 ),
@@ -1258,58 +1244,127 @@ a!localVariables(
                   isCollapsible: true,
                   isInitiallyCollapsed: a!isNullOrEmpty(local!poCategoryId),
                   marginAbove: "STANDARD",
-                  showWhen: and(local!poShow, local!overrideActiveToday),
+                  showWhen: local!poShow,
                   contents: {
-                    a!dropdownField(
-                      label: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{5d3a3777-9011-4e30-814b-4cbdd3faabb2}Job Category Override for Payroll',
-                      helpTooltip: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{47688bd2-3804-4b0c-a3a8-bfd99470d9c7}Select the job category if the employee worked outside their assigned role..',
-                      placeholder: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{f41a3d1a-7ae4-4053-9cff-d854c5601192}Select Category',
-                      choiceLabels: index(local!poOptions, "name", {}),
-                      choiceValues: local!poOptionIds,
-                      value: if(
-                        contains(local!poOptionIds, local!poCategoryId),
-                        local!poCategoryId,
-                        null
+                    /* Weekly: days this employee gets payroll override */
+                    if(
+                      a!defaultValue(ri!isWeekly, false()),
+                      rule!ATE_SEC_offlinePayrollOverrideDays(
+                        weekCrewData: ri!weekCrewData,
+                        woNumber: tostring(index(ri!woItem, "workOrderNumber", "")),
+                        rowKey: "labors",
+                        rowId: tostring(index(local!poRow, "employeeId", "")),
+                        selectedDay: ri!selectedDay
                       ),
-                      saveInto: {
-                        if(
-                          ri!isWeekly,
-                          a!save(
-                            ri!weekCrewData,
-                            rule!ATE_UTIL_offlineSetPayrollOverride(
-                              isWeekly: true(),
-                              weekCrewData: ri!weekCrewData,
-                              selectedDay: ri!selectedDay,
-                              woIndex: ri!woIndex,
-                              laborIndex: local!lIndex,
-                              action: "CATEGORY",
-                              value: save!value,
-                              options: local!poOptions,
-                              canCustomizeRate: local!poCanCustomize,
-                              targetDays: local!overrideDays
-                            )
+                      {}
+                    ),
+                    /* Category / rate fields only on highlighted days */
+                    if(
+                      local!poActiveToday,
+                      {
+                        a!dropdownField(
+                          label: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{5d3a3777-9011-4e30-814b-4cbdd3faabb2}Job Category Override for Payroll',
+                          helpTooltip: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{47688bd2-3804-4b0c-a3a8-bfd99470d9c7}Select the job category if the employee worked outside their assigned role..',
+                          placeholder: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{f41a3d1a-7ae4-4053-9cff-d854c5601192}Select Category',
+                          choiceLabels: index(local!poOptions, "name", {}),
+                          choiceValues: local!poOptionIds,
+                          value: if(
+                            contains(local!poOptionIds, local!poCategoryId),
+                            local!poCategoryId,
+                            null
                           ),
-                          a!save(
-                            ri!woCrewData,
-                            rule!ATE_UTIL_offlineSetPayrollOverride(
-                              isWeekly: false(),
-                              woCrewData: ri!woCrewData,
-                              woIndex: ri!woIndex,
-                              laborIndex: local!lIndex,
-                              action: "CATEGORY",
-                              value: save!value,
-                              options: local!poOptions,
-                              canCustomizeRate: local!poCanCustomize
-                            )
-                          )
-                        ),
-                        if(
-                          local!poHourTypeLevel,
-                          a!forEach(
-                            items: local!hourTypes,
-                            expression: if(
-                              a!isNullOrEmpty(fv!item.hourTypeId),
-                              {},
+                          saveInto: {
+                            if(
+                              ri!isWeekly,
+                              a!save(
+                                ri!weekCrewData,
+                                rule!ATE_UTIL_offlineSetPayrollOverride(
+                                  isWeekly: true(),
+                                  weekCrewData: ri!weekCrewData,
+                                  selectedDay: ri!selectedDay,
+                                  woIndex: ri!woIndex,
+                                  laborIndex: local!lIndex,
+                                  action: "CATEGORY",
+                                  value: save!value,
+                                  options: local!poOptions,
+                                  canCustomizeRate: local!poCanCustomize,
+                                  targetDays: local!poDays
+                                )
+                              ),
+                              a!save(
+                                ri!woCrewData,
+                                rule!ATE_UTIL_offlineSetPayrollOverride(
+                                  isWeekly: false(),
+                                  woCrewData: ri!woCrewData,
+                                  woIndex: ri!woIndex,
+                                  laborIndex: local!lIndex,
+                                  action: "CATEGORY",
+                                  value: save!value,
+                                  options: local!poOptions,
+                                  canCustomizeRate: local!poCanCustomize
+                                )
+                              )
+                            ),
+                            if(
+                              local!poHourTypeLevel,
+                              a!forEach(
+                                items: local!hourTypes,
+                                expression: if(
+                                  a!isNullOrEmpty(fv!item.hourTypeId),
+                                  {},
+                                  if(
+                                    ri!isWeekly,
+                                    a!save(
+                                      ri!weekCrewData,
+                                      rule!ATE_UTIL_offlineSetPayrollOverride(
+                                        isWeekly: true(),
+                                        weekCrewData: ri!weekCrewData,
+                                        selectedDay: ri!selectedDay,
+                                        woIndex: ri!woIndex,
+                                        laborIndex: local!lIndex,
+                                        action: "HOURTYPE_RATE",
+                                        hourTypeId: tointeger(fv!item.hourTypeId),
+                                        value: index(
+                                          index(
+                                            index(local!poOptions, "rate", {}),
+                                            wherecontains(
+                                              tointeger(save!value),
+                                              local!poOptionIds
+                                            ),
+                                            {}
+                                          ),
+                                          1,
+                                          null
+                                        ),
+                                        targetDays: local!poDays
+                                      )
+                                    ),
+                                    a!save(
+                                      ri!woCrewData,
+                                      rule!ATE_UTIL_offlineSetPayrollOverride(
+                                        isWeekly: false(),
+                                        woCrewData: ri!woCrewData,
+                                        woIndex: ri!woIndex,
+                                        laborIndex: local!lIndex,
+                                        action: "HOURTYPE_RATE",
+                                        hourTypeId: tointeger(fv!item.hourTypeId),
+                                        value: index(
+                                          index(
+                                            index(local!poOptions, "rate", {}),
+                                            wherecontains(
+                                              tointeger(save!value),
+                                              local!poOptionIds
+                                            ),
+                                            {}
+                                          ),
+                                          1,
+                                          null
+                                        )
+                                      )
+                                    )
+                                  )
+                                )
+                              ),
                               if(
                                 ri!isWeekly,
                                 a!save(
@@ -1320,8 +1375,7 @@ a!localVariables(
                                     selectedDay: ri!selectedDay,
                                     woIndex: ri!woIndex,
                                     laborIndex: local!lIndex,
-                                    action: "HOURTYPE_RATE",
-                                    hourTypeId: tointeger(fv!item.hourTypeId),
+                                    action: "EMPLOYEE_RATE",
                                     value: index(
                                       index(
                                         index(local!poOptions, "rate", {}),
@@ -1334,7 +1388,7 @@ a!localVariables(
                                       1,
                                       null
                                     ),
-                                    targetDays: local!overrideDays
+                                    targetDays: local!poDays
                                   )
                                 ),
                                 a!save(
@@ -1344,8 +1398,7 @@ a!localVariables(
                                     woCrewData: ri!woCrewData,
                                     woIndex: ri!woIndex,
                                     laborIndex: local!lIndex,
-                                    action: "HOURTYPE_RATE",
-                                    hourTypeId: tointeger(fv!item.hourTypeId),
+                                    action: "EMPLOYEE_RATE",
                                     value: index(
                                       index(
                                         index(local!poOptions, "rate", {}),
@@ -1362,263 +1415,215 @@ a!localVariables(
                                 )
                               )
                             )
+                          },
+                          required: false
+                        ),
+                        a!textField(
+                          label: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{c191ec45-b3d6-4f9a-b056-52d50b4a0071}Payroll Override Rate',
+                          helpTooltip: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{d3c96425-ff9a-476d-84ff-1401fe39d7c0}Edit the payroll rate for the selected job category',
+                          placeholder: "0.00",
+                          showWhen: and(
+                            local!poCanCustomize,
+                            not(local!poHourTypeLevel)
                           ),
-                          if(
-                            ri!isWeekly,
-                            a!save(
-                              ri!weekCrewData,
-                              rule!ATE_UTIL_offlineSetPayrollOverride(
-                                isWeekly: true(),
-                                weekCrewData: ri!weekCrewData,
-                                selectedDay: ri!selectedDay,
-                                woIndex: ri!woIndex,
-                                laborIndex: local!lIndex,
-                                action: "EMPLOYEE_RATE",
-                                value: index(
-                                  index(
-                                    index(local!poOptions, "rate", {}),
-                                    wherecontains(
-                                      tointeger(save!value),
-                                      local!poOptionIds
-                                    ),
-                                    {}
-                                  ),
-                                  1,
-                                  null
-                                ),
-                                targetDays: local!overrideDays
-                              )
-                            ),
-                            a!save(
-                              ri!woCrewData,
-                              rule!ATE_UTIL_offlineSetPayrollOverride(
-                                isWeekly: false(),
-                                woCrewData: ri!woCrewData,
-                                woIndex: ri!woIndex,
-                                laborIndex: local!lIndex,
-                                action: "EMPLOYEE_RATE",
-                                value: index(
-                                  index(
-                                    index(local!poOptions, "rate", {}),
-                                    wherecontains(
-                                      tointeger(save!value),
-                                      local!poOptionIds
-                                    ),
-                                    {}
-                                  ),
-                                  1,
-                                  null
+                          value: local!poEmployeeRate,
+                          refreshAfter: "UNFOCUS",
+                          required: a!isNotNullOrEmpty(local!poCategoryId),
+                          disabled: a!isNullOrEmpty(local!poCategoryId),
+                          saveInto: {
+                            if(
+                              ri!isWeekly,
+                              a!save(
+                                ri!weekCrewData,
+                                rule!ATE_UTIL_offlineSetPayrollOverride(
+                                  isWeekly: true(),
+                                  weekCrewData: ri!weekCrewData,
+                                  selectedDay: ri!selectedDay,
+                                  woIndex: ri!woIndex,
+                                  laborIndex: local!lIndex,
+                                  action: "EMPLOYEE_RATE",
+                                  value: save!value,
+                                  targetDays: local!poDays
+                                )
+                              ),
+                              a!save(
+                                ri!woCrewData,
+                                rule!ATE_UTIL_offlineSetPayrollOverride(
+                                  isWeekly: false(),
+                                  woCrewData: ri!woCrewData,
+                                  woIndex: ri!woIndex,
+                                  laborIndex: local!lIndex,
+                                  action: "EMPLOYEE_RATE",
+                                  value: save!value
                                 )
                               )
                             )
-                          )
-                        )
-                      },
-                      required: false
-                    ),
-                    a!textField(
-                      label: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{c191ec45-b3d6-4f9a-b056-52d50b4a0071}Payroll Override Rate',
-                      helpTooltip: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{d3c96425-ff9a-476d-84ff-1401fe39d7c0}Edit the payroll rate for the selected job category',
-                      placeholder: "0.00",
-                      showWhen: and(
-                        local!poCanCustomize,
-                        not(local!poHourTypeLevel)
-                      ),
-                      value: local!poEmployeeRate,
-                      refreshAfter: "UNFOCUS",
-                      required: a!isNotNullOrEmpty(local!poCategoryId),
-                      disabled: a!isNullOrEmpty(local!poCategoryId),
-                      saveInto: {
-                        if(
-                          ri!isWeekly,
-                          a!save(
-                            ri!weekCrewData,
-                            rule!ATE_UTIL_offlineSetPayrollOverride(
-                              isWeekly: true(),
-                              weekCrewData: ri!weekCrewData,
-                              selectedDay: ri!selectedDay,
-                              woIndex: ri!woIndex,
-                              laborIndex: local!lIndex,
-                              action: "EMPLOYEE_RATE",
-                              value: save!value,
-                              targetDays: local!overrideDays
-                            )
-                          ),
-                          a!save(
-                            ri!woCrewData,
-                            rule!ATE_UTIL_offlineSetPayrollOverride(
-                              isWeekly: false(),
-                              woCrewData: ri!woCrewData,
-                              woIndex: ri!woIndex,
-                              laborIndex: local!lIndex,
-                              action: "EMPLOYEE_RATE",
-                              value: save!value
-                            )
-                          )
-                        )
-                      },
-                      validations: if(
-                        and(
-                          a!isNotNullOrEmpty(local!poEmployeeRate),
-                          todecimal(local!poEmployeeRate) <= 0
-                        ),
-                        'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{70339712-a331-423b-be90-3cff450d2788}Rate must be greater than 0..',
-                        {}
-                      )
-                    ),
-                    if(
-                      and(
-                        local!poCanCustomize,
-                        local!poHourTypeLevel
-                      ),
-                      {
-                        a!richTextDisplayField(
-                          labelPosition: "COLLAPSED",
-                          marginAbove: "STANDARD",
-                          marginBelow: "LESS",
-                          value: a!richTextItem(
-                            text: upper(
-                              'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{c191ec45-b3d6-4f9a-b056-52d50b4a0071}Payroll Override Rate'
+                          },
+                          validations: if(
+                            and(
+                              a!isNotNullOrEmpty(local!poEmployeeRate),
+                              todecimal(local!poEmployeeRate) <= 0
                             ),
-                            color: "SECONDARY",
-                            size: "SMALL",
-                            style: "STRONG"
+                            'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{70339712-a331-423b-be90-3cff450d2788}Rate must be greater than 0..',
+                            {}
                           )
                         ),
-                        a!forEach(
-                          items: enumerate(ceiling(count(local!hourTypes) / 2)),
-                          expression: a!sideBySideLayout(
-                            items: a!forEach(
-                              items: { fv!item * 2 + 1, fv!item * 2 + 2 },
-                              expression: if(
-                                fv!item > count(local!hourTypes),
-                                a!sideBySideItem(
-                                  width: "1X",
-                                  item: a!richTextDisplayField(labelPosition: "COLLAPSED", value: "")
+                        if(
+                          and(
+                            local!poCanCustomize,
+                            local!poHourTypeLevel
+                          ),
+                          {
+                            a!richTextDisplayField(
+                              labelPosition: "COLLAPSED",
+                              marginAbove: "STANDARD",
+                              marginBelow: "LESS",
+                              value: a!richTextItem(
+                                text: upper(
+                                  'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{c191ec45-b3d6-4f9a-b056-52d50b4a0071}Payroll Override Rate'
                                 ),
-                                a!localVariables(
-                                  local!htIdx: fv!item,
-                                  local!htId: tointeger(
-                                    index(
-                                      local!hourTypes[local!htIdx],
-                                      "hourTypeId",
-                                      null
-                                    )
-                                  ),
-                                  local!htRate: index(
-                                    local!hourTypes[local!htIdx],
-                                    "payrollOverrideRate",
-                                    null
-                                  ),
-                                  local!htName: a!match(
-                                    value: local!htId,
-                                    equals: tointeger(
-                                      cons!ATE_CONS_INT_MTE_OFFLINE_HOURTYPES[1]
+                                color: "SECONDARY",
+                                size: "SMALL",
+                                style: "STRONG"
+                              )
+                            ),
+                            a!forEach(
+                              items: enumerate(ceiling(count(local!hourTypes) / 2)),
+                              expression: a!sideBySideLayout(
+                                items: a!forEach(
+                                  items: { fv!item * 2 + 1, fv!item * 2 + 2 },
+                                  expression: if(
+                                    fv!item > count(local!hourTypes),
+                                    a!sideBySideItem(
+                                      width: "1X",
+                                      item: a!richTextDisplayField(labelPosition: "COLLAPSED", value: "")
                                     ),
-                                    then: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{357eaa30-3c51-43d3-9203-6770f1fb3e70}Straight',
-                                    equals: tointeger(
-                                      cons!ATE_CONS_INT_MTE_OFFLINE_HOURTYPES[2]
-                                    ),
-                                    then: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{ded7768f-481f-4fad-a4f9-0e48bfbc0bc4}Overtime',
-                                    default: if(
-                                      a!isNullOrEmpty(local!htId),
-                                      "Hour Type",
-                                      index(
+                                    a!localVariables(
+                                      local!htIdx: fv!item,
+                                      local!htId: tointeger(
                                         index(
+                                          local!hourTypes[local!htIdx],
+                                          "hourTypeId",
+                                          null
+                                        )
+                                      ),
+                                      local!htRate: index(
+                                        local!hourTypes[local!htIdx],
+                                        "payrollOverrideRate",
+                                        null
+                                      ),
+                                      local!htName: a!match(
+                                        value: local!htId,
+                                        equals: tointeger(
+                                          cons!ATE_CONS_INT_MTE_OFFLINE_HOURTYPES[1]
+                                        ),
+                                        then: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{357eaa30-3c51-43d3-9203-6770f1fb3e70}Straight',
+                                        equals: tointeger(
+                                          cons!ATE_CONS_INT_MTE_OFFLINE_HOURTYPES[2]
+                                        ),
+                                        then: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{ded7768f-481f-4fad-a4f9-0e48bfbc0bc4}Overtime',
+                                        default: if(
+                                          a!isNullOrEmpty(local!htId),
+                                          "Hour Type",
                                           index(
-                                            ri!rejStOtRefHourData,
-                                            'recordType!{0ba490b0-1715-4af0-a10a-1c8f99d9f481}ROME Ref Hour Type.fields.{b27c18e1-9c0c-4709-8944-9e79b07bb027}name',
-                                            {}
-                                          ),
-                                          wherecontains(
-                                            local!htId,
-                                            tointeger(
+                                            index(
                                               index(
                                                 ri!rejStOtRefHourData,
-                                                'recordType!{0ba490b0-1715-4af0-a10a-1c8f99d9f481}ROME Ref Hour Type.fields.{f343f388-81a2-4036-9c0d-c8e692e65cc3}hourTypeId',
+                                                'recordType!{0ba490b0-1715-4af0-a10a-1c8f99d9f481}ROME Ref Hour Type.fields.{b27c18e1-9c0c-4709-8944-9e79b07bb027}name',
                                                 {}
-                                              )
-                                            )
-                                          ),
-                                          {}
-                                        ),
-                                        1,
-                                        "Hour Type"
-                                      )
-                                    )
-                                  ),
-                                  a!sideBySideItem(
-                                    width: "1X",
-                                    item: a!textField(
-                                      label: local!htName,
-                                      placeholder: "0.00",
-                                      value: local!htRate,
-                                      refreshAfter: "UNFOCUS",
-                                      required: and(
-                                        a!isNotNullOrEmpty(local!poCategoryId),
-                                        a!isNotNullOrEmpty(local!htId)
-                                      ),
-                                      disabled: or(
-                                        a!isNullOrEmpty(local!poCategoryId),
-                                        a!isNullOrEmpty(local!htId)
-                                      ),
-                                      saveInto: {
-                                        if(
-                                          ri!isWeekly,
-                                          a!save(
-                                            ri!weekCrewData,
-                                            rule!ATE_UTIL_offlineSetPayrollOverride(
-                                              isWeekly: true(),
-                                              weekCrewData: ri!weekCrewData,
-                                              selectedDay: ri!selectedDay,
-                                              woIndex: ri!woIndex,
-                                              laborIndex: local!lIndex,
-                                              action: "HOURTYPE_RATE",
-                                              value: save!value,
-                                              hourTypeId: local!htId,
-                                              targetDays: local!overrideDays
-                                            )
-                                          ),
-                                          a!save(
-                                            ri!woCrewData,
-                                            rule!ATE_UTIL_offlineSetPayrollOverride(
-                                              isWeekly: false(),
-                                              woCrewData: ri!woCrewData,
-                                              woIndex: ri!woIndex,
-                                              laborIndex: local!lIndex,
-                                              action: "HOURTYPE_RATE",
-                                              value: save!value,
-                                              hourTypeId: local!htId
-                                            )
+                                              ),
+                                              wherecontains(
+                                                local!htId,
+                                                tointeger(
+                                                  index(
+                                                    ri!rejStOtRefHourData,
+                                                    'recordType!{0ba490b0-1715-4af0-a10a-1c8f99d9f481}ROME Ref Hour Type.fields.{f343f388-81a2-4036-9c0d-c8e692e65cc3}hourTypeId',
+                                                    {}
+                                                  )
+                                                )
+                                              ),
+                                              {}
+                                            ),
+                                            1,
+                                            "Hour Type"
                                           )
                                         )
-                                      },
-                                      validations: if(
-                                        and(
-                                          a!isNotNullOrEmpty(local!htRate),
-                                          todecimal(local!htRate) <= 0,
-                                          not(
-                                            contains(
-                                              tointeger(
-                                                {
-                                                  cons!ROME_INT_HOUR_TYPE_SICK,
-                                                  cons!ROME_INT_HOUR_TYPE_VACATION,
-                                                  cons!ROME_INT_HOUR_TYPE_HOLIDAY
-                                                }
+                                      ),
+                                      a!sideBySideItem(
+                                        width: "1X",
+                                        item: a!textField(
+                                          label: local!htName,
+                                          placeholder: "0.00",
+                                          value: local!htRate,
+                                          refreshAfter: "UNFOCUS",
+                                          required: and(
+                                            a!isNotNullOrEmpty(local!poCategoryId),
+                                            a!isNotNullOrEmpty(local!htId)
+                                          ),
+                                          disabled: or(
+                                            a!isNullOrEmpty(local!poCategoryId),
+                                            a!isNullOrEmpty(local!htId)
+                                          ),
+                                          saveInto: {
+                                            if(
+                                              ri!isWeekly,
+                                              a!save(
+                                                ri!weekCrewData,
+                                                rule!ATE_UTIL_offlineSetPayrollOverride(
+                                                  isWeekly: true(),
+                                                  weekCrewData: ri!weekCrewData,
+                                                  selectedDay: ri!selectedDay,
+                                                  woIndex: ri!woIndex,
+                                                  laborIndex: local!lIndex,
+                                                  action: "HOURTYPE_RATE",
+                                                  value: save!value,
+                                                  hourTypeId: local!htId,
+                                                  targetDays: local!poDays
+                                                )
                                               ),
-                                              local!htId
+                                              a!save(
+                                                ri!woCrewData,
+                                                rule!ATE_UTIL_offlineSetPayrollOverride(
+                                                  isWeekly: false(),
+                                                  woCrewData: ri!woCrewData,
+                                                  woIndex: ri!woIndex,
+                                                  laborIndex: local!lIndex,
+                                                  action: "HOURTYPE_RATE",
+                                                  value: save!value,
+                                                  hourTypeId: local!htId
+                                                )
+                                              )
                                             )
+                                          },
+                                          validations: if(
+                                            and(
+                                              a!isNotNullOrEmpty(local!htRate),
+                                              todecimal(local!htRate) <= 0,
+                                              not(
+                                                contains(
+                                                  tointeger(
+                                                    {
+                                                      cons!ROME_INT_HOUR_TYPE_SICK,
+                                                      cons!ROME_INT_HOUR_TYPE_VACATION,
+                                                      cons!ROME_INT_HOUR_TYPE_HOLIDAY
+                                                    }
+                                                  ),
+                                                  local!htId
+                                                )
+                                              )
+                                            ),
+                                            'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{70339712-a331-423b-be90-3cff450d2788}Rate must be greater than 0..',
+                                            {}
                                           )
-                                        ),
-                                        'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{70339712-a331-423b-be90-3cff450d2788}Rate must be greater than 0..',
-                                        {}
+                                        )
                                       )
                                     )
                                   )
                                 )
                               )
                             )
-                          )
+                          },
+                          {}
                         )
                       },
                       {}
@@ -2230,6 +2235,23 @@ a!localVariables(
                   ri!weekCrewData[ri!selectedDay].woCrewData[ri!woIndex].equipments[local!eIndex],
                   ri!woCrewData[ri!woIndex].equipments[local!eIndex]
                 ),
+                /* Weekly: days this row gets payroll override (empty = not weekly) */
+                local!epDays: if(
+                  a!defaultValue(ri!isWeekly, false()),
+                  tointeger(
+                    rule!ATE_UTIL_offlineGetPayrollOverrideDays(
+                      weekCrewData: ri!weekCrewData,
+                      woNumber: tostring(index(ri!woItem, "workOrderNumber", "")),
+                      rowKey: "equipments",
+                      rowId: tostring(index(local!epRow, "equipmentId", ""))
+                    )
+                  ),
+                  {}
+                ),
+                local!epActiveToday: or(
+                  not(a!defaultValue(ri!isWeekly, false())),
+                  contains(local!epDays, tointeger(ri!selectedDay))
+                ),
                 local!epCategoryId: tointeger(
                   index(local!epRow, "payrollConfigOverrideId", null)
                 ),
@@ -2241,145 +2263,164 @@ a!localVariables(
                   isCollapsible: true,
                   isInitiallyCollapsed: a!isNullOrEmpty(local!epCategoryId),
                   marginAbove: "STANDARD",
-                  showWhen: and(local!epShow, local!overrideActiveToday),
+                  showWhen: local!epShow,
                   contents: {
-                    a!dropdownField(
-                      label: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{3779d42f-c2b4-451f-a2a1-9c03215e1927}Payroll Override Category',
-                      placeholder: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{f41a3d1a-7ae4-4053-9cff-d854c5601192}Select Category',
-                      choiceLabels: index(local!epOptions, "name", {}),
-                      choiceValues: local!epOptionIds,
-                      value: if(
-                        contains(local!epOptionIds, local!epCategoryId),
-                        local!epCategoryId,
-                        null
+                    /* Weekly: days this equipment gets payroll override */
+                    if(
+                      a!defaultValue(ri!isWeekly, false()),
+                      rule!ATE_SEC_offlinePayrollOverrideDays(
+                        weekCrewData: ri!weekCrewData,
+                        woNumber: tostring(index(ri!woItem, "workOrderNumber", "")),
+                        rowKey: "equipments",
+                        rowId: tostring(index(local!epRow, "equipmentId", "")),
+                        selectedDay: ri!selectedDay
                       ),
-                      saveInto: {
-                        if(
-                          ri!isWeekly,
-                          a!save(
-                            ri!weekCrewData,
-                            rule!ATE_UTIL_offlineSetEquipmentPayrollOverrides(
-                              isWeekly: true(),
-                              weekCrewData: ri!weekCrewData,
-                              selectedDay: ri!selectedDay,
-                              woIndex: ri!woIndex,
-                              equipmentIndex: local!eIndex,
-                              action: "CATEGORY",
-                              value: save!value,
-                              options: local!epOptions,
-                              targetDays: local!overrideDays
-                            )
+                      {}
+                    ),
+                    /* Category / rate fields only on highlighted days */
+                    if(
+                      local!epActiveToday,
+                      {
+                        a!dropdownField(
+                          label: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{3779d42f-c2b4-451f-a2a1-9c03215e1927}Payroll Override Category',
+                          placeholder: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{f41a3d1a-7ae4-4053-9cff-d854c5601192}Select Category',
+                          choiceLabels: index(local!epOptions, "name", {}),
+                          choiceValues: local!epOptionIds,
+                          value: if(
+                            contains(local!epOptionIds, local!epCategoryId),
+                            local!epCategoryId,
+                            null
                           ),
-                          a!save(
-                            ri!woCrewData,
-                            rule!ATE_UTIL_offlineSetEquipmentPayrollOverrides(
-                              isWeekly: false(),
-                              woCrewData: ri!woCrewData,
-                              woIndex: ri!woIndex,
-                              equipmentIndex: local!eIndex,
-                              action: "CATEGORY",
-                              value: save!value,
-                              options: local!epOptions
-                            )
-                          )
-                        ),
-                        if(
-                          ri!isWeekly,
-                          a!save(
-                            ri!weekCrewData,
-                            rule!ATE_UTIL_offlineSetEquipmentPayrollOverrides(
-                              isWeekly: true(),
-                              weekCrewData: ri!weekCrewData,
-                              selectedDay: ri!selectedDay,
-                              woIndex: ri!woIndex,
-                              equipmentIndex: local!eIndex,
-                              action: "RATE",
-                              value: index(
-                                index(
-                                  index(local!epOptions, "rate", {}),
-                                  wherecontains(
-                                    tointeger(save!value),
-                                    local!epOptionIds
-                                  ),
-                                  {}
-                                ),
-                                1,
-                                null
+                          saveInto: {
+                            if(
+                              ri!isWeekly,
+                              a!save(
+                                ri!weekCrewData,
+                                rule!ATE_UTIL_offlineSetEquipmentPayrollOverrides(
+                                  isWeekly: true(),
+                                  weekCrewData: ri!weekCrewData,
+                                  selectedDay: ri!selectedDay,
+                                  woIndex: ri!woIndex,
+                                  equipmentIndex: local!eIndex,
+                                  action: "CATEGORY",
+                                  value: save!value,
+                                  options: local!epOptions,
+                                  targetDays: local!epDays
+                                )
                               ),
-                              targetDays: local!overrideDays
-                            )
-                          ),
-                          a!save(
-                            ri!woCrewData,
-                            rule!ATE_UTIL_offlineSetEquipmentPayrollOverrides(
-                              isWeekly: false(),
-                              woCrewData: ri!woCrewData,
-                              woIndex: ri!woIndex,
-                              equipmentIndex: local!eIndex,
-                              action: "RATE",
-                              value: index(
-                                index(
-                                  index(local!epOptions, "rate", {}),
-                                  wherecontains(
-                                    tointeger(save!value),
-                                    local!epOptionIds
+                              a!save(
+                                ri!woCrewData,
+                                rule!ATE_UTIL_offlineSetEquipmentPayrollOverrides(
+                                  isWeekly: false(),
+                                  woCrewData: ri!woCrewData,
+                                  woIndex: ri!woIndex,
+                                  equipmentIndex: local!eIndex,
+                                  action: "CATEGORY",
+                                  value: save!value,
+                                  options: local!epOptions
+                                )
+                              )
+                            ),
+                            if(
+                              ri!isWeekly,
+                              a!save(
+                                ri!weekCrewData,
+                                rule!ATE_UTIL_offlineSetEquipmentPayrollOverrides(
+                                  isWeekly: true(),
+                                  weekCrewData: ri!weekCrewData,
+                                  selectedDay: ri!selectedDay,
+                                  woIndex: ri!woIndex,
+                                  equipmentIndex: local!eIndex,
+                                  action: "RATE",
+                                  value: index(
+                                    index(
+                                      index(local!epOptions, "rate", {}),
+                                      wherecontains(
+                                        tointeger(save!value),
+                                        local!epOptionIds
+                                      ),
+                                      {}
+                                    ),
+                                    1,
+                                    null
                                   ),
-                                  {}
-                                ),
-                                1,
-                                null
+                                  targetDays: local!epDays
+                                )
+                              ),
+                              a!save(
+                                ri!woCrewData,
+                                rule!ATE_UTIL_offlineSetEquipmentPayrollOverrides(
+                                  isWeekly: false(),
+                                  woCrewData: ri!woCrewData,
+                                  woIndex: ri!woIndex,
+                                  equipmentIndex: local!eIndex,
+                                  action: "RATE",
+                                  value: index(
+                                    index(
+                                      index(local!epOptions, "rate", {}),
+                                      wherecontains(
+                                        tointeger(save!value),
+                                        local!epOptionIds
+                                      ),
+                                      {}
+                                    ),
+                                    1,
+                                    null
+                                  )
+                                )
                               )
                             )
-                          )
-                        )
-                      },
-                      required: false
-                    ),
-                    a!textField(
-                      label: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{c191ec45-b3d6-4f9a-b056-52d50b4a0071}Payroll Override Rate',
-                      placeholder: "0.00",
-                      showWhen: local!epCanCustomize,
-                      value: local!epRate,
-                      refreshAfter: "UNFOCUS",
-                      required: a!isNotNullOrEmpty(local!epCategoryId),
-                      disabled: a!isNullOrEmpty(local!epCategoryId),
-                      saveInto: {
-                        if(
-                          ri!isWeekly,
-                          a!save(
-                            ri!weekCrewData,
-                            rule!ATE_UTIL_offlineSetEquipmentPayrollOverrides(
-                              isWeekly: true(),
-                              weekCrewData: ri!weekCrewData,
-                              selectedDay: ri!selectedDay,
-                              woIndex: ri!woIndex,
-                              equipmentIndex: local!eIndex,
-                              action: "RATE",
-                              value: save!value,
-                              targetDays: local!overrideDays
-                            )
-                          ),
-                          a!save(
-                            ri!woCrewData,
-                            rule!ATE_UTIL_offlineSetEquipmentPayrollOverrides(
-                              isWeekly: false(),
-                              woCrewData: ri!woCrewData,
-                              woIndex: ri!woIndex,
-                              equipmentIndex: local!eIndex,
-                              action: "RATE",
-                              value: save!value
-                            )
-                          )
-                        )
-                      },
-                      validations: if(
-                        and(
-                          a!isNotNullOrEmpty(local!epRate),
-                          todecimal(local!epRate) <= 0
+                          },
+                          required: false
                         ),
-                        'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{70339712-a331-423b-be90-3cff450d2788}Rate must be greater than 0..',
-                        {}
-                      )
+                        a!textField(
+                          label: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{c191ec45-b3d6-4f9a-b056-52d50b4a0071}Payroll Override Rate',
+                          placeholder: "0.00",
+                          showWhen: local!epCanCustomize,
+                          value: local!epRate,
+                          refreshAfter: "UNFOCUS",
+                          required: a!isNotNullOrEmpty(local!epCategoryId),
+                          disabled: a!isNullOrEmpty(local!epCategoryId),
+                          saveInto: {
+                            if(
+                              ri!isWeekly,
+                              a!save(
+                                ri!weekCrewData,
+                                rule!ATE_UTIL_offlineSetEquipmentPayrollOverrides(
+                                  isWeekly: true(),
+                                  weekCrewData: ri!weekCrewData,
+                                  selectedDay: ri!selectedDay,
+                                  woIndex: ri!woIndex,
+                                  equipmentIndex: local!eIndex,
+                                  action: "RATE",
+                                  value: save!value,
+                                  targetDays: local!epDays
+                                )
+                              ),
+                              a!save(
+                                ri!woCrewData,
+                                rule!ATE_UTIL_offlineSetEquipmentPayrollOverrides(
+                                  isWeekly: false(),
+                                  woCrewData: ri!woCrewData,
+                                  woIndex: ri!woIndex,
+                                  equipmentIndex: local!eIndex,
+                                  action: "RATE",
+                                  value: save!value
+                                )
+                              )
+                            )
+                          },
+                          validations: if(
+                            and(
+                              a!isNotNullOrEmpty(local!epRate),
+                              todecimal(local!epRate) <= 0
+                            ),
+                            'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{70339712-a331-423b-be90-3cff450d2788}Rate must be greater than 0..',
+                            {}
+                          )
+                        )
+                      },
+                      {}
                     )
                   }
                 )
