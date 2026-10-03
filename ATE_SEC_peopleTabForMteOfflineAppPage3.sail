@@ -70,11 +70,22 @@ a!localVariables(
   local!epOptionIds: tointeger(index(local!epOptions, "id", {})),
 
   /* ---------- WEEKLY: DAYS THAT PAYROLL OVERRIDE EDITS APPLY TO ---------- */
+  /* Viewed day highlighted     -> edits apply to all highlighted days
+     Viewed day not highlighted -> edits apply to the viewed day only */
   local!overrideDays: if(
     a!defaultValue(ri!isWeekly, false()),
-    rule!ATE_UTIL_offlineGetPayrollOverrideDays(
-      weekCrewData: ri!weekCrewData,
-      woNumber: tostring(index(ri!woItem, "workOrderNumber", ""))
+    a!localVariables(
+      local!savedDays: tointeger(
+        rule!ATE_UTIL_offlineGetPayrollOverrideDays(
+          weekCrewData: ri!weekCrewData,
+          woNumber: tostring(index(ri!woItem, "workOrderNumber", ""))
+        )
+      ),
+      if(
+        contains(local!savedDays, tointeger(ri!selectedDay)),
+        local!savedDays,
+        tointeger(ri!selectedDay)
+      )
     ),
     {}
   ),

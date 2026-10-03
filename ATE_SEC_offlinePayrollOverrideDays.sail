@@ -1,7 +1,12 @@
 /*
   ATE_SEC_offlinePayrollOverrideDays
   Weekly view: "Payroll override applies to" card with one tappable chip per day.
-  Filled = included, outlined = excluded, locked = day being edited (always included).
+  Filled = included, outlined = excluded. The chips always show the saved selection;
+  the day being viewed is only marked, never forced on.
+
+  How edits behave (applied in ATE_SEC_peopleTabForMteOfflineAppPage3):
+    viewed day is highlighted     -> change applies to all highlighted days
+    viewed day is not highlighted -> change applies to the viewed day only
 
   Rule inputs:
     weekCrewData  (Any Type)  saved into
@@ -16,7 +21,9 @@ a!localVariables(
     weekCrewData: ri!weekCrewData,
     woNumber: ri!woNumber
   ),
-  local!isWholeWeek: length(union(tointeger(local!days), tointeger(local!days))) >= count(local!dayIdxs),
+  local!isWholeWeek: length(intersection(tointeger(local!days), local!dayIdxs)) >= count(local!dayIdxs),
+  local!currentLabel: index(local!dayLabels, ri!selectedDay, "this day"),
+  local!currentIsIncluded: contains(tointeger(local!days), tointeger(ri!selectedDay)),
   a!cardLayout(
     shape: "ROUNDED",
     padding: "LESS",
@@ -42,7 +49,11 @@ a!localVariables(
                 ),
                 char(10),
                 a!richTextItem(
-                  text: "Category and rate changes apply to the highlighted days.",
+                  text: if(
+                    local!currentIsIncluded,
+                    "Changes made on " & local!currentLabel & " apply to all highlighted days.",
+                    local!currentLabel & " is not highlighted – changes made on " & local!currentLabel & " apply to " & local!currentLabel & " only."
+                  ),
                   color: "SECONDARY",
                   size: "SMALL"
                 )
@@ -86,18 +97,14 @@ a!localVariables(
           expression: a!localVariables(
             local!day: fv!item,
             local!isCurrent: fv!item = ri!selectedDay,
-            local!isOn: or(fv!item = ri!selectedDay, contains(local!days, fv!item)),
+            local!isOn: contains(tointeger(local!days), fv!item),
             a!buttonWidget(
-              label: index(local!dayLabels, fv!item, "Day " & fv!item),
+              /* the day being viewed is marked with a dot */
+              label: index(local!dayLabels, fv!item, "Day " & fv!item) & if(local!isCurrent, " •", ""),
               size: "SMALL",
               style: if(local!isOn, "SOLID", "OUTLINE"),
               color: cons!ROME_TEXT_HEX_ORANGE,
-              disabled: local!isCurrent,
-              tooltip: if(
-                local!isCurrent,
-                "Day you are editing – always included",
-                if(local!isOn, "Tap to exclude", "Tap to include")
-              ),
+              tooltip: if(local!isCurrent, "Day you are viewing. ", "") & if(local!isOn, "Tap to exclude", "Tap to include"),
               saveInto: a!save(
                 ri!weekCrewData,
                 rule!ATE_UTIL_offlineSetPayrollOverrideDays(
@@ -105,16 +112,12 @@ a!localVariables(
                   woNumber: ri!woNumber,
                   days: a!localVariables(
                     local!newDays: if(
-                      contains(local!days, local!day),
+                      local!isOn,
                       difference(tointeger(local!days), tointeger(local!day)),
                       append(tointeger(local!days), tointeger(local!day))
                     ),
-                    /* nothing left = only the day being edited (never "empty", which would mean whole week) */
-                    if(
-                      a!isNullOrEmpty(local!newDays),
-                      tointeger(ri!selectedDay),
-                      local!newDays
-                    )
+                    /* nothing highlighted is stored as {0} ("no days"); an empty list would mean "whole week" */
+                    if(a!isNullOrEmpty(local!newDays), { 0 }, local!newDays)
                   )
                 )
               )
