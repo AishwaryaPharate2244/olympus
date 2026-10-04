@@ -1254,15 +1254,23 @@ a!localVariables(
                         'recordType!{96a1105e-c06f-47a3-9521-815d11fdb1d5}ROME Production Unit WO.fields.{2e705ca2-38e4-42f6-9895-98bc75a3d59c}oracleProjectNumber',
                         null
                       ),
-                      labors: a!update(
-                        local!crewDefaultLaborTime,
-                        { "workOrderNumber" },
-                        { local!wo }
+                      labors: if(
+                        a!isNullOrEmpty(local!crewDefaultLaborTime),
+                        {},
+                        a!update(
+                          local!crewDefaultLaborTime,
+                          { "workOrderNumber" },
+                          { local!wo }
+                        )
                       ),
-                      equipments: a!update(
-                        local!crewDefaultequipmenTime,
-                        { "workOrderNumber" },
-                        { local!wo }
+                      equipments: if(
+                        a!isNullOrEmpty(local!crewDefaultequipmenTime),
+                        {},
+                        a!update(
+                          local!crewDefaultequipmenTime,
+                          { "workOrderNumber" },
+                          { local!wo }
+                        )
                       ),
                       units: if(
                         a!isNullOrEmpty(local!woEstimatedUnits),
