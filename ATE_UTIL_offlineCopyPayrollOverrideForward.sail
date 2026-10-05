@@ -34,15 +34,14 @@ a!localVariables(
                 expression: if(
                   trim(tostring(index(fv!item, local!key, ""))) <> local!sourceKey,
                   fv!item,
-                  if(
-                    ri!rowKey = "labors",
-                    a!localVariables(
-                      local!rowHourTypes: index(fv!item, "hourTypes", {}),
-                      local!rowHourTypeIds: tointeger(index(local!rowHourTypes, "hourTypeId", {})),
-                      a!update(
-                        data: a!update(data: fv!item, index: "payrollConfigOverrideId", value: index(local!source, "payrollConfigOverrideId", null)),
-                        index: "hourTypes",
-                        value: append(
+                  a!update(
+                    data: a!update(data: fv!item, index: "payrollConfigOverrideId", value: index(local!source, "payrollConfigOverrideId", null)),
+                    index: if(ri!rowKey = "labors", "hourTypes", "payrollOverrideRate"),
+                    value: if(
+                      ri!rowKey = "labors",
+                      a!localVariables(
+                        local!rowHourTypes: index(fv!item, "hourTypes", {}),
+                        append(
                           a!forEach(
                             items: local!rowHourTypes,
                             expression: a!update(
@@ -68,7 +67,10 @@ a!localVariables(
                             a!forEach(
                               items: local!sourceHourTypes,
                               expression: if(
-                                contains(local!rowHourTypeIds, tointeger(index(fv!item, "hourTypeId", null))),
+                                contains(
+                                  tointeger(index(local!rowHourTypes, "hourTypeId", {})),
+                                  tointeger(index(fv!item, "hourTypeId", null))
+                                ),
                                 null,
                                 a!map(
                                   hourTypeId: index(fv!item, "hourTypeId", null),
@@ -79,12 +81,8 @@ a!localVariables(
                             )
                           )
                         )
-                      )
-                    ),
-                    a!update(
-                      data: a!update(data: fv!item, index: "payrollConfigOverrideId", value: index(local!source, "payrollConfigOverrideId", null)),
-                      index: "payrollOverrideRate",
-                      value: index(local!source, "payrollOverrideRate", null)
+                      ),
+                      index(local!source, "payrollOverrideRate", null)
                     )
                   )
                 )
