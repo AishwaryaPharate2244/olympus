@@ -521,6 +521,11 @@ a!localVariables(
               field: 'recordType!{6d6374a4-d719-4bbe-862d-05c081b6cc38}ATE L Configuration Module.fields.{d70ad7b7-4bee-4294-9570-dd2ab1d34f54}rModuleId',
               operator: "=",
               value: cons!ATE_INT_CONFIGURATION_MODULE_PAYROLL
+            ),
+            a!queryFilter(
+              field: 'recordType!{6d6374a4-d719-4bbe-862d-05c081b6cc38}ATE L Configuration Module.fields.{f41fe54e-95e1-4100-9059-63f88c5ef343}isActive',
+              operator: "=",
+              value: true
             )
           },
           getActiveRecordsOnly: true
@@ -578,6 +583,11 @@ a!localVariables(
               field: 'recordType!{6d6374a4-d719-4bbe-862d-05c081b6cc38}ATE L Configuration Module.fields.{d70ad7b7-4bee-4294-9570-dd2ab1d34f54}rModuleId',
               operator: "=",
               value: cons!ATE_INT_ENV_CONFIGURATION_MODULE_EQUIPMENT_PAYROLL
+            ),
+            a!queryFilter(
+              field: 'recordType!{6d6374a4-d719-4bbe-862d-05c081b6cc38}ATE L Configuration Module.fields.{f41fe54e-95e1-4100-9059-63f88c5ef343}isActive',
+              operator: "=",
+              value: true
             )
           },
           getActiveRecordsOnly: true
