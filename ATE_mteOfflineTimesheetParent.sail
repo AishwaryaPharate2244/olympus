@@ -1569,18 +1569,15 @@ a!localVariables(
                 local!selectionMap.entryType = cons!ATE_TXT_DAILY_WEEKLY_MTE_OFFLINE[2],
                 a!save(
                   local!selectionWeekMap,
-                  rule!ATE_UTIL_offlineClearExcludedPayrollOverrideDays(
-                    weekData: a!forEach(
-                      items: local!weekCrewData,
-                      expression: a!map(
-                        entryType: local!selectionMap.entryType,
-                        crewTemplateId: local!selectionMap.crewTemplateId,
-                        crew: local!selectionMap.crew,
-                        date: fv!item.date,
-                        workOrderData: fv!item.woCrewData
-                      )
-                    ),
-                    woKey: "workOrderData"
+                  a!forEach(
+                    items: local!weekCrewData,
+                    expression: a!map(
+                      entryType: local!selectionMap.entryType,
+                      crewTemplateId: local!selectionMap.crewTemplateId,
+                      crew: local!selectionMap.crew,
+                      date: fv!item.date,
+                      workOrderData: fv!item.woCrewData
+                    )
                   )
                 ),
                 a!save(
@@ -1613,10 +1610,7 @@ a!localVariables(
                 ri!finalTimesheetMap,
                 if(
                   local!selectionMap.entryType = cons!ATE_TXT_DAILY_WEEKLY_MTE_OFFLINE[2],
-                  rule!ATE_UTIL_offlineClearExcludedPayrollOverrideDays(
-                    weekData: local!selectionWeekMap,
-                    woKey: "workOrderData"
-                  ),
+                  local!selectionWeekMap,
                   local!selectionMap
                 )
               ),
@@ -1679,18 +1673,15 @@ a!localVariables(
                     {
                       a!save(
                         local!selectionWeekMap,
-                        rule!ATE_UTIL_offlineClearExcludedPayrollOverrideDays(
-                          weekData: a!forEach(
-                            items: local!weekCrewData,
-                            expression: a!map(
-                              entryType: local!selectionMap.entryType,
-                              crewTemplateId: local!selectionMap.crewTemplateId,
-                              crew: local!selectionMap.crew,
-                              date: fv!item.date,
-                              workOrderData: fv!item.woCrewData
-                            )
-                          ),
-                          woKey: "workOrderData"
+                        a!forEach(
+                          items: local!weekCrewData,
+                          expression: a!map(
+                            entryType: local!selectionMap.entryType,
+                            crewTemplateId: local!selectionMap.crewTemplateId,
+                            crew: local!selectionMap.crew,
+                            date: fv!item.date,
+                            workOrderData: fv!item.woCrewData
+                          )
                         )
                       ),
                       

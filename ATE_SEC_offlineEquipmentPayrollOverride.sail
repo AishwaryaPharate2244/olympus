@@ -1,6 +1,6 @@
 /*
   ATE_SEC_offlineEquipmentPayrollOverride
-  Payroll Override section for one equipment row (category, rate, weekly days).
+  Payroll Override section for one equipment row: a checkbox shows the category and rate; weekly view also offers "Copy to following days".
 
   Rule inputs:
     payrollOverride  (Any Type)
@@ -23,51 +23,24 @@ a!localVariables(
     ri!weekCrewData[ri!selectedDay].woCrewData[ri!woIndex].equipments[ri!equipmentIndex],
     ri!woCrewData[ri!woIndex].equipments[ri!equipmentIndex]
   ),
-  /* Weekly: days this row gets payroll override (empty = not weekly) */
-  local!epDays: if(
-    a!defaultValue(ri!isWeekly, false()),
-    tointeger(
-      rule!ATE_UTIL_offlineGetPayrollOverrideDays(
-        weekCrewData: ri!weekCrewData,
-        woNumber: tostring(index(ri!woItem, "workOrderNumber", "")),
-        rowKey: "equipments",
-        rowId: tostring(index(local!epRow, "equipmentId", ""))
-      )
-    ),
-    {}
-  ),
-  local!epActiveToday: or(
-    not(a!defaultValue(ri!isWeekly, false())),
-    contains(local!epDays, tointeger(ri!selectedDay))
-  ),
   local!epCategoryId: tointeger(
     index(local!epRow, "payrollConfigOverrideId", null)
   ),
+  local!epShowFields: a!isNotNullOrEmpty(local!epCategoryId),
   local!epRate: index(local!epRow, "payrollOverrideRate", null),
   a!sectionLayout(
-    label: "Payroll Override",
-    labelSize: "SMALL",
-    labelColor: ri!brandingMap.headingLabelColor,
-    isCollapsible: true,
-    isInitiallyCollapsed: a!isNullOrEmpty(local!epCategoryId),
     marginAbove: "STANDARD",
     showWhen: local!epShow,
     contents: {
-      /* Weekly: days this equipment gets payroll override */
-      if(
-        a!defaultValue(ri!isWeekly, false()),
-        rule!ATE_SEC_offlinePayrollOverrideDays(
-          weekCrewData: ri!weekCrewData,
-          woNumber: tostring(index(ri!woItem, "workOrderNumber", "")),
-          rowKey: "equipments",
-          rowId: tostring(index(local!epRow, "equipmentId", "")),
-          selectedDay: ri!selectedDay
-        ),
-        {}
+      a!checkboxField(
+        labelPosition: "COLLAPSED",
+        choiceLabels: { "Payroll Override" },
+        choiceValues: { true() },
+        value: if(local!epShowFields, { true() }, {}),
+        saveInto: a!save(local!epShowFields, a!isNotNullOrEmpty(save!value))
       ),
-      /* Category / rate fields only on highlighted days */
       if(
-        local!epActiveToday,
+        local!epShowFields,
         {
           a!dropdownField(
             label: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{3779d42f-c2b4-451f-a2a1-9c03215e1927}Payroll Override Category',
@@ -90,8 +63,7 @@ a!localVariables(
                   woIndex: ri!woIndex,
                   equipmentIndex: ri!equipmentIndex,
                   categoryId: save!value,
-                  rate: displayvalue(tointeger(save!value), local!epOptionIds, index(local!epOptions, "rate", {}), null),
-                  targetDays: local!epDays
+                  rate: displayvalue(tointeger(save!value), local!epOptionIds, index(local!epOptions, "rate", {}), null)
                 )
               ),
               a!save(
@@ -128,8 +100,7 @@ a!localVariables(
                     woIndex: ri!woIndex,
                     equipmentIndex: ri!equipmentIndex,
                     categoryId: local!epCategoryId,
-                    rate: save!value,
-                    targetDays: local!epDays
+                    rate: save!value
                   )
                 ),
                 a!save(
@@ -152,6 +123,33 @@ a!localVariables(
               ),
               'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{70339712-a331-423b-be90-3cff450d2788}Rate must be greater than 0..',
               {}
+            )
+          ),
+          a!richTextDisplayField(
+            labelPosition: "COLLAPSED",
+            showWhen: and(
+              a!defaultValue(ri!isWeekly, false()),
+              ri!selectedDay < count(ri!weekCrewData),
+              a!isNotNullOrEmpty(local!epCategoryId)
+            ),
+            value: a!richTextItem(
+              text: { a!richTextIcon(icon: "copy"), " Copy to following days" },
+              style: "STRONG",
+              size: "SMALL",
+              color: cons!ROME_TEXT_HEX_ORANGE,
+              linkStyle: "STANDALONE",
+              link: a!dynamicLink(
+                saveInto: a!save(
+                  ri!weekCrewData,
+                  rule!ATE_UTIL_offlineCopyPayrollOverrideForward(
+                    weekCrewData: ri!weekCrewData,
+                    selectedDay: ri!selectedDay,
+                    woIndex: ri!woIndex,
+                    rowKey: "equipments",
+                    rowIndex: ri!equipmentIndex
+                  )
+                )
+              )
             )
           )
         },

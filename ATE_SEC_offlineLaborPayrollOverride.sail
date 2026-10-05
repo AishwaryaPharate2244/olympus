@@ -1,6 +1,6 @@
 /*
   ATE_SEC_offlineLaborPayrollOverride
-  Payroll Override section for one employee row (category, rate, hour-type rates, weekly days).
+  Payroll Override section for one employee row: a checkbox shows the category and rates; weekly view also offers "Copy to following days".
 
   Rule inputs:
     payrollOverride     (Any Type)
@@ -26,26 +26,10 @@ a!localVariables(
     ri!woCrewData[ri!woIndex].labors[ri!laborIndex]
   ),
   local!hourTypes: index(local!poRow, "hourTypes", {}),
-  /* Weekly: days this row gets payroll override (empty = not weekly) */
-  local!poDays: if(
-    a!defaultValue(ri!isWeekly, false()),
-    tointeger(
-      rule!ATE_UTIL_offlineGetPayrollOverrideDays(
-        weekCrewData: ri!weekCrewData,
-        woNumber: tostring(index(ri!woItem, "workOrderNumber", "")),
-        rowKey: "labors",
-        rowId: tostring(index(local!poRow, "employeeId", ""))
-      )
-    ),
-    {}
-  ),
-  local!poActiveToday: or(
-    not(a!defaultValue(ri!isWeekly, false())),
-    contains(local!poDays, tointeger(ri!selectedDay))
-  ),
   local!poCategoryId: tointeger(
     index(local!poRow, "payrollConfigOverrideId", null)
   ),
+  local!poShowFields: a!isNotNullOrEmpty(local!poCategoryId),
   local!poEmployeeRate: index(
     reject(
       a!isNullOrEmpty(_),
@@ -55,29 +39,18 @@ a!localVariables(
     null
   ),
   a!sectionLayout(
-    label: "Payroll Override",
-    labelSize: "SMALL",
-    labelColor: ri!brandingMap.headingLabelColor,
-    isCollapsible: true,
-    isInitiallyCollapsed: a!isNullOrEmpty(local!poCategoryId),
     marginAbove: "STANDARD",
     showWhen: local!poShow,
     contents: {
-      /* Weekly: days this employee gets payroll override */
-      if(
-        a!defaultValue(ri!isWeekly, false()),
-        rule!ATE_SEC_offlinePayrollOverrideDays(
-          weekCrewData: ri!weekCrewData,
-          woNumber: tostring(index(ri!woItem, "workOrderNumber", "")),
-          rowKey: "labors",
-          rowId: tostring(index(local!poRow, "employeeId", "")),
-          selectedDay: ri!selectedDay
-        ),
-        {}
+      a!checkboxField(
+        labelPosition: "COLLAPSED",
+        choiceLabels: { "Payroll Override" },
+        choiceValues: { true() },
+        value: if(local!poShowFields, { true() }, {}),
+        saveInto: a!save(local!poShowFields, a!isNotNullOrEmpty(save!value))
       ),
-      /* Category / rate fields only on highlighted days */
       if(
-        local!poActiveToday,
+        local!poShowFields,
         {
           a!dropdownField(
             label: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{5d3a3777-9011-4e30-814b-4cbdd3faabb2}Job Category Override for Payroll',
@@ -101,8 +74,7 @@ a!localVariables(
                   woIndex: ri!woIndex,
                   laborIndex: ri!laborIndex,
                   categoryId: save!value,
-                  rate: displayvalue(tointeger(save!value), local!poOptionIds, index(local!poOptions, "rate", {}), null),
-                  targetDays: local!poDays
+                  rate: displayvalue(tointeger(save!value), local!poOptionIds, index(local!poOptions, "rate", {}), null)
                 )
               ),
               a!save(
@@ -143,8 +115,7 @@ a!localVariables(
                     woIndex: ri!woIndex,
                     laborIndex: ri!laborIndex,
                     categoryId: local!poCategoryId,
-                    rate: save!value,
-                    targetDays: local!poDays
+                    rate: save!value
                   )
                 ),
                 a!save(
@@ -278,8 +249,7 @@ a!localVariables(
                                     laborIndex: ri!laborIndex,
                                     categoryId: local!poCategoryId,
                                     rate: save!value,
-                                    hourTypeId: local!htId,
-                                    targetDays: local!poDays
+                                    hourTypeId: local!htId
                                   )
                                 ),
                                 a!save(
@@ -325,6 +295,33 @@ a!localVariables(
               )
             },
             {}
+          ),
+          a!richTextDisplayField(
+            labelPosition: "COLLAPSED",
+            showWhen: and(
+              a!defaultValue(ri!isWeekly, false()),
+              ri!selectedDay < count(ri!weekCrewData),
+              a!isNotNullOrEmpty(local!poCategoryId)
+            ),
+            value: a!richTextItem(
+              text: { a!richTextIcon(icon: "copy"), " Copy to following days" },
+              style: "STRONG",
+              size: "SMALL",
+              color: cons!ROME_TEXT_HEX_ORANGE,
+              linkStyle: "STANDALONE",
+              link: a!dynamicLink(
+                saveInto: a!save(
+                  ri!weekCrewData,
+                  rule!ATE_UTIL_offlineCopyPayrollOverrideForward(
+                    weekCrewData: ri!weekCrewData,
+                    selectedDay: ri!selectedDay,
+                    woIndex: ri!woIndex,
+                    rowKey: "labors",
+                    rowIndex: ri!laborIndex
+                  )
+                )
+              )
+            )
           )
         },
         {}
