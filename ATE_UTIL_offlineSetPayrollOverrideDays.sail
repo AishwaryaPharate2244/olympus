@@ -1,5 +1,6 @@
 a!localVariables(
   local!idKey: if(ri!rowKey = "labors", "employeeId", "equipmentId"),
+  local!days: tointeger(ri!days),
   local!source: index(
     reject(
       fn!isnull,
@@ -49,13 +50,13 @@ a!localVariables(
                     fv!item,
                     if(
                       and(
-                        contains(tointeger(ri!days), local!day),
+                        contains(local!days, local!day),
                         a!isNullOrEmpty(index(fv!item, "payrollConfigOverrideId", null)),
                         a!isNotNullOrEmpty(local!source)
                       ),
                       a!update(
                         data: a!update(
-                          data: a!update(data: fv!item, index: "payrollOverrideDays", value: tointeger(ri!days)),
+                          data: a!update(data: fv!item, index: "payrollOverrideDays", value: local!days),
                           index: "payrollConfigOverrideId",
                           value: index(local!source, "payrollConfigOverrideId", null)
                         ),
@@ -88,7 +89,7 @@ a!localVariables(
                           index(local!source, "payrollOverrideRate", null)
                         )
                       ),
-                      a!update(data: fv!item, index: "payrollOverrideDays", value: tointeger(ri!days))
+                      a!update(data: fv!item, index: "payrollOverrideDays", value: local!days)
                     )
                   )
                 )
