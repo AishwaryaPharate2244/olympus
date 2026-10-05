@@ -50,7 +50,7 @@ a!localVariables(
                 expression: a!localVariables(
                   local!woIdx: fv!index,
                   if(
-                    tostring(index(fv!item, "workOrderNumber", "")) <> tostring(index(local!wo, "workOrderNumber", "")),
+                    trim(tostring(index(fv!item, "workOrderNumber", ""))) <> trim(tostring(index(local!wo, "workOrderNumber", ""))),
                     fv!item,
                     a!update(
                       data: fv!item,
