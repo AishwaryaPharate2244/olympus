@@ -499,7 +499,7 @@ a!localVariables(
   local!isForeperson: not(
     a!isUserMemberOfGroup(
       username: local!loggedInUser,
-      groups: cons!ATE_GRP_PAYROLL_OVERRIDE_REPORT_ACCESS_USERS
+      groups: cons!ATE_GRP_PAYROLL_OVERRIDE_ACCESS
     )
   ),
   local!payrollModuleConfigIds: if(
