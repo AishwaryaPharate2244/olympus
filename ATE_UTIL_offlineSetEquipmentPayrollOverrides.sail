@@ -9,6 +9,8 @@ a!localVariables(
     {}
   ),
   local!row: index(index(local!wo, "equipments", {}), ri!equipmentIndex, {}),
+  local!eqId: trim(tostring(index(local!row, "equipmentId", ""))),
+  local!rate: if(a!isNullOrEmpty(ri!rate), null, round(todecimal(ri!rate), 2)),
   if(
     not(a!defaultValue(ri!isWeekly, false())),
     updatearray(
@@ -23,7 +25,7 @@ a!localVariables(
           a!update(
             data: a!update(data: local!row, index: "payrollConfigOverrideId", value: tointeger(ri!categoryId)),
             index: "payrollOverrideRate",
-            value: if(a!isNullOrEmpty(ri!rate), null, round(todecimal(ri!rate), 2))
+            value: local!rate
           )
         )
       )
@@ -58,25 +60,24 @@ a!localVariables(
                         expression: if(
                           or(
                             and(local!day = ri!selectedDay, local!woIdx = ri!woIndex, fv!index = ri!equipmentIndex),
-                            and(
-                              a!isNotNullOrEmpty(trim(tostring(index(local!row, "equipmentId", "")))),
-                              trim(tostring(index(fv!item, "equipmentId", ""))) = trim(tostring(index(local!row, "equipmentId", "")))
-                            ),
-                            and(
-                              a!isNullOrEmpty(trim(tostring(index(local!row, "equipmentId", "")))),
-                              not(a!defaultValue(index(local!row, "isAdhoc", false()), false())),
-                              not(a!defaultValue(index(fv!item, "isAdhoc", false()), false())),
-                              if(
-                                a!isNotNullOrEmpty(trim(tostring(index(local!row, "equipmentName", "")))),
-                                trim(tostring(index(fv!item, "equipmentName", ""))) = trim(tostring(index(local!row, "equipmentName", ""))),
-                                fv!index = ri!equipmentIndex
+                            if(
+                              a!isNotNullOrEmpty(local!eqId),
+                              trim(tostring(index(fv!item, "equipmentId", ""))) = local!eqId,
+                              and(
+                                not(a!defaultValue(index(local!row, "isAdhoc", false()), false())),
+                                not(a!defaultValue(index(fv!item, "isAdhoc", false()), false())),
+                                if(
+                                  a!isNotNullOrEmpty(trim(tostring(index(local!row, "equipmentName", "")))),
+                                  trim(tostring(index(fv!item, "equipmentName", ""))) = trim(tostring(index(local!row, "equipmentName", ""))),
+                                  fv!index = ri!equipmentIndex
+                                )
                               )
                             )
                           ),
                           a!update(
                             data: a!update(data: fv!item, index: "payrollConfigOverrideId", value: tointeger(ri!categoryId)),
                             index: "payrollOverrideRate",
-                            value: if(a!isNullOrEmpty(ri!rate), null, round(todecimal(ri!rate), 2))
+                            value: local!rate
                           ),
                           fv!item
                         )
