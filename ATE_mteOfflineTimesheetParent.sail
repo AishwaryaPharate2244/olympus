@@ -496,16 +496,10 @@ a!localVariables(
       batchSize: cons!ATE_INT_BATCH_SIZE_MAX_RECORD_BATCH_SIZE
     )
   ).data,
-  local!isForeperson: and(
+  local!isForeperson: not(
     a!isUserMemberOfGroup(
       username: local!loggedInUser,
-      groups: cons!ATE_GRP_ALL_FOREMEN
-    ),
-    not(
-      a!isUserMemberOfGroup(
-        username: local!loggedInUser,
-        groups: { cons!ATE_GRP_ALL_GENERAL_FOREMEN }
-      )
+      groups: cons!ATE_GRP_PAYROLL_OVERRIDE_REPORT_ACCESS_USERS
     )
   ),
   local!payrollModuleConfigIds: if(
