@@ -507,8 +507,7 @@ a!localVariables(
     {},
     tointeger(
       index(
-        a!queryRecordType(
-          recordType: 'recordType!{6d6374a4-d719-4bbe-862d-05c081b6cc38}ATE L Configuration Module',
+        rule!ATE_QRY_getConfigurationModules(
           fields: {
             'recordType!{6d6374a4-d719-4bbe-862d-05c081b6cc38}ATE L Configuration Module.fields.{96a9b7da-ab2d-41d6-a0cb-97dac46435e0}configurationId'
           },
@@ -522,17 +521,9 @@ a!localVariables(
               field: 'recordType!{6d6374a4-d719-4bbe-862d-05c081b6cc38}ATE L Configuration Module.fields.{d70ad7b7-4bee-4294-9570-dd2ab1d34f54}rModuleId',
               operator: "=",
               value: cons!ATE_INT_CONFIGURATION_MODULE_PAYROLL
-            ),
-            a!queryFilter(
-              field: 'recordType!{6d6374a4-d719-4bbe-862d-05c081b6cc38}ATE L Configuration Module.fields.{f41fe54e-95e1-4100-9059-63f88c5ef343}isActive',
-              operator: "=",
-              value: true
             )
           },
-          pagingInfo: a!pagingInfo(
-            startIndex: 1,
-            batchSize: cons!ATE_INT_BATCH_SIZE_MAX_RECORD_BATCH_SIZE
-          )
+          getActiveRecordsOnly: true
         ).data,
         'recordType!{6d6374a4-d719-4bbe-862d-05c081b6cc38}ATE L Configuration Module.fields.{96a9b7da-ab2d-41d6-a0cb-97dac46435e0}configurationId',
         {}
@@ -573,8 +564,7 @@ a!localVariables(
     {},
     tointeger(
       index(
-        a!queryRecordType(
-          recordType: 'recordType!{6d6374a4-d719-4bbe-862d-05c081b6cc38}ATE L Configuration Module',
+        rule!ATE_QRY_getConfigurationModules(
           fields: {
             'recordType!{6d6374a4-d719-4bbe-862d-05c081b6cc38}ATE L Configuration Module.fields.{96a9b7da-ab2d-41d6-a0cb-97dac46435e0}configurationId'
           },
@@ -588,17 +578,9 @@ a!localVariables(
               field: 'recordType!{6d6374a4-d719-4bbe-862d-05c081b6cc38}ATE L Configuration Module.fields.{d70ad7b7-4bee-4294-9570-dd2ab1d34f54}rModuleId',
               operator: "=",
               value: cons!ATE_INT_ENV_CONFIGURATION_MODULE_EQUIPMENT_PAYROLL
-            ),
-            a!queryFilter(
-              field: 'recordType!{6d6374a4-d719-4bbe-862d-05c081b6cc38}ATE L Configuration Module.fields.{f41fe54e-95e1-4100-9059-63f88c5ef343}isActive',
-              operator: "=",
-              value: true
             )
           },
-          pagingInfo: a!pagingInfo(
-            startIndex: 1,
-            batchSize: cons!ATE_INT_BATCH_SIZE_MAX_RECORD_BATCH_SIZE
-          )
+          getActiveRecordsOnly: true
         ).data,
         'recordType!{6d6374a4-d719-4bbe-862d-05c081b6cc38}ATE L Configuration Module.fields.{96a9b7da-ab2d-41d6-a0cb-97dac46435e0}configurationId',
         {}
