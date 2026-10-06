@@ -1,17 +1,13 @@
 a!localVariables(
-  /* Read the WO row from the same place the Previous/Next buttons save to */
-  local!woRow: if(
-    ri!isWeekly,
-    index(index(index(ri!weekCrewData, ri!selectedDay, {}), "woCrewData", {}), ri!woIndex, {}),
-    index(ri!woCrewData, ri!woIndex, {})
-  ),
   /* ---------- LABOR ---------- */
-  /* Labor pagination */
-  local!laborCount: length(index(ri!woItem, "labors", {})),
-  /* Page is kept on the WO row (like selectedMenu) so it is not lost when a save rebuilds this tab */
-  local!laborStartIndex: a!defaultValue(index(local!woRow, "laborStartIndex", 1), 1),
+  /* Labor pagination - page is saved on the WO so it stays after other saves */
+  local!laborStartIndex: index(
+    if(ri!isWeekly, ri!weekCrewData[ri!selectedDay].woCrewData[ri!woIndex], ri!woCrewData[ri!woIndex]),
+    "laborStartIndex",
+    1
+  ),
   local!laborPagingInfo: a!pagingInfo(
-    startIndex: if(local!laborStartIndex > local!laborCount, 1, local!laborStartIndex),
+    startIndex: if(local!laborStartIndex > length(index(ri!woItem, "labors", {})), 1, local!laborStartIndex),
     batchSize: 5
   ),
   local!laborDataSubset: a!dataSubset(
@@ -31,12 +27,14 @@ a!localVariables(
   ),
 
   /* ---------- EQUIPMENT ---------- */
-  /* Equipment pagination */
-  local!equipmentCount: length(index(ri!woItem, "equipments", {})),
-  /* Page is kept on the WO row (like selectedMenu) so it is not lost when a save rebuilds this tab */
-  local!equipmentStartIndex: a!defaultValue(index(local!woRow, "equipmentStartIndex", 1), 1),
+  /* Equipment pagination - page is saved on the WO so it stays after other saves */
+  local!equipmentStartIndex: index(
+    if(ri!isWeekly, ri!weekCrewData[ri!selectedDay].woCrewData[ri!woIndex], ri!woCrewData[ri!woIndex]),
+    "equipmentStartIndex",
+    1
+  ),
   local!equipmentPagingInfo: a!pagingInfo(
-    startIndex: if(local!equipmentStartIndex > local!equipmentCount, 1, local!equipmentStartIndex),
+    startIndex: if(local!equipmentStartIndex > length(index(ri!woItem, "equipments", {})), 1, local!equipmentStartIndex),
     batchSize: 5
   ),
   local!equipmentDataSubset: a!dataSubset(
