@@ -215,14 +215,22 @@ a!localVariables(
       tointeger({})
     ),
     fetchTotalCount: false,
-    filters: a!queryFilter(
-      field: 'recordType!{c859c726-925b-479e-9d91-5a281e91de4f}ATE Custom Field Configuration.fields.{e1744731-ca2d-48f7-9165-3bbb945f828e}moduleId',
-      operator: "in",
-      value: {
-        cons!ATE_INT_CONFIGURATION_MODULE_VEG_TIMESHEET,
-        cons!ATE_INT_CONFIGURATION_MODULE_CONS_TIMESHEET
-      }
-    ),
+    filters: {
+      a!queryFilter(
+        field: 'recordType!{c859c726-925b-479e-9d91-5a281e91de4f}ATE Custom Field Configuration.fields.{e1744731-ca2d-48f7-9165-3bbb945f828e}moduleId',
+        operator: "in",
+        value: {
+          cons!ATE_INT_CONFIGURATION_MODULE_VEG_TIMESHEET,
+          cons!ATE_INT_CONFIGURATION_MODULE_CONS_TIMESHEET,
+          cons!ATE_INT_CONFIGURATION_MODULE_WORK_ORDER
+        }
+      ),
+      a!queryFilter(
+        field: 'recordType!{c859c726-925b-479e-9d91-5a281e91de4f}ATE Custom Field Configuration.fields.{1586b03d-8d18-45c3-adbe-c90a2628bdd5}isActive',
+        operator: "=",
+        value: true()
+      )
+    },
     pagingInfo: a!pagingInfo(
       startIndex: 1,
       batchSize: cons!ATE_INT_BATCH_SIZE_MAX_RECORD_BATCH_SIZE
@@ -245,6 +253,20 @@ a!localVariables(
     ),
     null
   ),
+  local!allWoConfiguration: index(
+    local!allCustomFieldConfiguration,
+    wherecontains(
+      cons!ATE_INT_CONFIGURATION_MODULE_WORK_ORDER,
+      tointeger(
+        index(
+          local!allCustomFieldConfiguration,
+          'recordType!{c859c726-925b-479e-9d91-5a281e91de4f}ATE Custom Field Configuration.fields.{e1744731-ca2d-48f7-9165-3bbb945f828e}moduleId',
+          null
+        )
+      )
+    ),
+    null
+  ),
   local!timesheetCustomFieldsConf,
   local!allDropdownChoices: rule!ATE_QRY_getCustomFieldDropdownChoice(
     pagingInfo: a!pagingInfo(
@@ -252,16 +274,24 @@ a!localVariables(
       batchSize: cons!ATE_INT_BATCH_SIZE_MAX_RECORD_BATCH_SIZE
     ),
     fetchTotalCount: false,
-    filters: a!queryFilter(
-      field: 'recordType!{5ab3767e-c805-4492-a08d-9b5c6afb5649}ATE Custom Field Dropdown Choice.fields.{e6dac35c-59e6-434f-bc1f-72d402f648d5}fieldConfigId',
-      operator: "in",
-      value: index(
-        local!allTimesheetConfiguration,
-        'recordType!{c859c726-925b-479e-9d91-5a281e91de4f}ATE Custom Field Configuration.fields.{1ba54d51-f6c4-4712-a39a-ccf7f987a181}fieldConfigId',
-        null
+    filters: {
+      a!queryFilter(
+        field: 'recordType!{5ab3767e-c805-4492-a08d-9b5c6afb5649}ATE Custom Field Dropdown Choice.fields.{e6dac35c-59e6-434f-bc1f-72d402f648d5}fieldConfigId',
+        operator: "in",
+        value: {
+          index(
+            local!allTimesheetConfiguration,
+            'recordType!{c859c726-925b-479e-9d91-5a281e91de4f}ATE Custom Field Configuration.fields.{1ba54d51-f6c4-4712-a39a-ccf7f987a181}fieldConfigId',
+            null
+          ),
+          index(
+            local!allWoConfiguration,
+            'recordType!{c859c726-925b-479e-9d91-5a281e91de4f}ATE Custom Field Configuration.fields.{1ba54d51-f6c4-4712-a39a-ccf7f987a181}fieldConfigId',
+            null
+          )
+        }
       )
-    ),
-    
+    }
   ).data,
   local!timesheetDropDownChoices,
   local!allCrewCustomers: rule!ATE_QRY_getCustomer(
@@ -521,11 +551,6 @@ a!localVariables(
               field: 'recordType!{6d6374a4-d719-4bbe-862d-05c081b6cc38}ATE L Configuration Module.fields.{d70ad7b7-4bee-4294-9570-dd2ab1d34f54}rModuleId',
               operator: "=",
               value: cons!ATE_INT_CONFIGURATION_MODULE_PAYROLL
-            ),
-            a!queryFilter(
-              field: 'recordType!{6d6374a4-d719-4bbe-862d-05c081b6cc38}ATE L Configuration Module.fields.{f41fe54e-95e1-4100-9059-63f88c5ef343}isActive',
-              operator: "=",
-              value: true
             )
           },
           getActiveRecordsOnly: true
@@ -583,11 +608,6 @@ a!localVariables(
               field: 'recordType!{6d6374a4-d719-4bbe-862d-05c081b6cc38}ATE L Configuration Module.fields.{d70ad7b7-4bee-4294-9570-dd2ab1d34f54}rModuleId',
               operator: "=",
               value: cons!ATE_INT_ENV_CONFIGURATION_MODULE_EQUIPMENT_PAYROLL
-            ),
-            a!queryFilter(
-              field: 'recordType!{6d6374a4-d719-4bbe-862d-05c081b6cc38}ATE L Configuration Module.fields.{f41fe54e-95e1-4100-9059-63f88c5ef343}isActive',
-              operator: "=",
-              value: true
             )
           },
           getActiveRecordsOnly: true
@@ -834,7 +854,9 @@ a!localVariables(
       touniformstring(local!weekDays),
       tostring(todate(today()))
     ),
-    weekday(today()),2),
+    weekday(today()),
+    2
+  ),
   local!currentWoCrewData: rule!ATE_UTIL_GetCurrentWoCrewData(
     isWeekly: local!isWeekly,
     weekCrewData: local!weekCrewData,
@@ -1226,6 +1248,70 @@ a!localVariables(
                       ),
                       null
                     ),
+                    local!woCustomFieldsConf: index(
+                      local!allWoConfiguration,
+                      wherecontains(
+                        tointeger(
+                          index(
+                            index(
+                              local!selectedCrewWoDetails,
+                              wherecontains(
+                                local!wo,
+                                local!selectedCrewWoDetails['recordType!{96a1105e-c06f-47a3-9521-815d11fdb1d5}ROME Production Unit WO.fields.{dba57993-6687-4e94-adce-3841f30378ed}workOrderNumber']
+                              ),
+                              null
+                            ),
+                            'recordType!{96a1105e-c06f-47a3-9521-815d11fdb1d5}ROME Production Unit WO.relationships.{7522895c-d9ee-4bb6-9000-2040ca09171b}contractListRegion102.relationships.{7cdbf61e-5e14-425e-b5a8-30cb39296721}configuration.fields.{f0a38adf-be75-47bb-808f-104043b69f31}configurationId',
+                            null
+                          )
+                        ),
+                        tointeger(
+                          index(
+                            local!allWoConfiguration,
+                            'recordType!{c859c726-925b-479e-9d91-5a281e91de4f}ATE Custom Field Configuration.fields.{61d58e5e-d409-4f63-8c04-af04b5e978bd}configurationId',
+                            null
+                          )
+                        )
+                      ),
+                      null
+                    ),
+                    local!woSpecificDropDownChoices: index(
+                      local!allDropdownChoices,
+                      wherecontains(
+                        local!wo,
+                        touniformstring(
+                          index(
+                            local!allDropdownChoices,
+                            'recordType!{5ab3767e-c805-4492-a08d-9b5c6afb5649}ATE Custom Field Dropdown Choice.fields.{82391e5c-6039-445d-ab32-ee12b1e7649c}workOrderNumber',
+                            null
+                          )
+                        )
+                      ),
+                      null
+                    ),
+                    local!woDropDownChoices: rule!ATE_RULE_getUdfDropdownChoicesForMTEOffline(
+                      customFieldConfig: local!woCustomFieldsConf,
+                      dropdownChoices: local!woSpecificDropDownChoices
+                    ),
+                    local!woCustomFieldValue,
+                    /*if(*/
+                    /*tointeger(*/
+                    /*index(*/
+                    /*local!timesheetCustomFieldsConf,*/
+                    /*'recordType!{c859c726-925b-479e-9d91-5a281e91de4f}ATE Custom Field Configuration.fields.{1ba54d51-f6c4-4712-a39a-ccf7f987a181}fieldConfigId',*/
+                    /*null*/
+                    /*)*/
+                    /*) = tointeger(*/
+                    /*index(*/
+                    /*local!timesheetCustomFieldValue,*/
+                    /*"fieldConfigId",*/
+                    /*null*/
+                    /*)*/
+                    /*),*/
+                    /*local!timesheetCustomFieldValue,*/
+                    /*null*/
+                    /*)*/
+                    /*),*/
                     a!map(
                       workOrderNumber: local!wo,
                       fusionProjectNo: index(
@@ -1291,7 +1377,10 @@ a!localVariables(
                       selectedHourTypeId: null,
                       timesheetComments: "",
                       unitsComments: "",
-                      photoDocId: null
+                      photoDocId: null,
+                      woCustomFieldsConf: local!woCustomFieldsConf,
+                      woDropDownChoices: local!woDropDownChoices,
+                      woCustomFieldValue: local!woCustomFieldValue
                     )
                   )
                 )
@@ -1614,13 +1703,51 @@ a!localVariables(
                   local!selectionMap
                 )
               ),
+              /*if(*/
+              /*a!isNullOrEmpty(local!timesheetCustomFieldValue),*/
+              /*{},*/
+              /*a!save(*/
+              /*local!timesheetCustomFieldValue,*/
+              /*a!update(*/
+              /*local!timesheetCustomFieldValue,*/
+              /*{*/
+              /*"createdBy",*/
+              /*"createdOn",*/
+              /*"modifiedBy",*/
+              /*"modifiedOn"*/
+              /*},*/
+              /*{*/
+              /*loggedInUser(),*/
+              /*now(),*/
+              /*loggedInUser(),*/
+              /*now()*/
+              /*}*/
+              /*)*/
+              /*)*/
+              /*),*/
+              a!save(
+                ri!customFieldValue,
+                reject(
+                  fn!isnull,
+                  a!flatten(
+                    {
+                      local!timesheetCustomFieldValue,
+                      index(
+                        local!currentWoCrewData,
+                        "woCustomFieldValue",
+                        null
+                      )
+                    }
+                  )
+                )
+              ),
               if(
-                a!isNullOrEmpty(local!timesheetCustomFieldValue),
+                a!isNullOrEmpty(ri!customFieldValue),
                 {},
                 a!save(
-                  local!timesheetCustomFieldValue,
+                  ri!customFieldValue,
                   a!update(
-                    local!timesheetCustomFieldValue,
+                    ri!customFieldValue,
                     {
                       "createdBy",
                       "createdOn",
@@ -1635,10 +1762,6 @@ a!localVariables(
                     }
                   )
                 )
-              ),
-              a!save(
-                ri!customFieldValue,
-                local!timesheetCustomFieldValue
               ),
               a!save(ri!woFavouritesList, local!woFavourites),
               a!save(ri!loggedInUser, local!loggedInUser)
