@@ -1,7 +1,13 @@
 a!localVariables(
   /* ---------- LABOR ---------- */
   /* Labor pagination */
-  local!laborPagingInfo: a!pagingInfo(startIndex: 1, batchSize: 5),
+  local!laborCount: length(index(ri!woItem, "labors", {})),
+  /* Page is kept on the WO row (like selectedMenu) so it is not lost when a save rebuilds this tab */
+  local!laborStartIndex: a!defaultValue(index(ri!woItem, "laborStartIndex", 1), 1),
+  local!laborPagingInfo: a!pagingInfo(
+    startIndex: if(local!laborStartIndex > local!laborCount, 1, local!laborStartIndex),
+    batchSize: 5
+  ),
   local!laborDataSubset: a!dataSubset(
     startIndex: local!laborPagingInfo.startIndex,
     batchSize: local!laborPagingInfo.batchSize,
@@ -20,7 +26,13 @@ a!localVariables(
 
   /* ---------- EQUIPMENT ---------- */
   /* Equipment pagination */
-  local!equipmentPagingInfo: a!pagingInfo(startIndex: 1, batchSize: 5),
+  local!equipmentCount: length(index(ri!woItem, "equipments", {})),
+  /* Page is kept on the WO row (like selectedMenu) so it is not lost when a save rebuilds this tab */
+  local!equipmentStartIndex: a!defaultValue(index(ri!woItem, "equipmentStartIndex", 1), 1),
+  local!equipmentPagingInfo: a!pagingInfo(
+    startIndex: if(local!equipmentStartIndex > local!equipmentCount, 1, local!equipmentStartIndex),
+    batchSize: 5
+  ),
   local!equipmentDataSubset: a!dataSubset(
     startIndex: local!equipmentPagingInfo.startIndex,
     batchSize: local!equipmentPagingInfo.batchSize,
@@ -1198,14 +1210,39 @@ a!localVariables(
                   color: cons!ROME_TEXT_HEX_ORANGE,
                   disabled: local!laborPagingInfo.startIndex = 1,
                   saveInto: {
-                    a!save(
-                      local!laborPagingInfo,
-                      a!pagingInfo(
-                        startIndex: max(
-                          1,
-                          local!laborPagingInfo.startIndex - local!laborPagingInfo.batchSize
-                        ),
-                        batchSize: local!laborPagingInfo.batchSize
+                    if(
+                      ri!isWeekly,
+                      a!save(
+                        ri!weekCrewData,
+                        a!update(
+                          data: ri!weekCrewData,
+                          index: ri!selectedDay,
+                          value: a!update(
+                            data: ri!weekCrewData[ri!selectedDay],
+                            index: "woCrewData",
+                            value: updatearray(
+                              ri!weekCrewData[ri!selectedDay].woCrewData,
+                              ri!woIndex,
+                              a!update(
+                                data: ri!weekCrewData[ri!selectedDay].woCrewData[ri!woIndex],
+                                index: "laborStartIndex",
+                                value: max(1, local!laborPagingInfo.startIndex - local!laborPagingInfo.batchSize)
+                              )
+                            )
+                          )
+                        )
+                      ),
+                      a!save(
+                        ri!woCrewData,
+                        updatearray(
+                          ri!woCrewData,
+                          ri!woIndex,
+                          a!update(
+                            data: ri!woCrewData[ri!woIndex],
+                            index: "laborStartIndex",
+                            value: max(1, local!laborPagingInfo.startIndex - local!laborPagingInfo.batchSize)
+                          )
+                        )
                       )
                     )
                   }
@@ -1240,11 +1277,39 @@ a!localVariables(
                   color: cons!ROME_TEXT_HEX_ORANGE,
                   disabled: local!laborPagingInfo.startIndex + local!laborPagingInfo.batchSize > local!laborDataSubset.totalCount,
                   saveInto: {
-                    a!save(
-                      local!laborPagingInfo,
-                      a!pagingInfo(
-                        startIndex: local!laborPagingInfo.startIndex + local!laborPagingInfo.batchSize,
-                        batchSize: local!laborPagingInfo.batchSize
+                    if(
+                      ri!isWeekly,
+                      a!save(
+                        ri!weekCrewData,
+                        a!update(
+                          data: ri!weekCrewData,
+                          index: ri!selectedDay,
+                          value: a!update(
+                            data: ri!weekCrewData[ri!selectedDay],
+                            index: "woCrewData",
+                            value: updatearray(
+                              ri!weekCrewData[ri!selectedDay].woCrewData,
+                              ri!woIndex,
+                              a!update(
+                                data: ri!weekCrewData[ri!selectedDay].woCrewData[ri!woIndex],
+                                index: "laborStartIndex",
+                                value: local!laborPagingInfo.startIndex + local!laborPagingInfo.batchSize
+                              )
+                            )
+                          )
+                        )
+                      ),
+                      a!save(
+                        ri!woCrewData,
+                        updatearray(
+                          ri!woCrewData,
+                          ri!woIndex,
+                          a!update(
+                            data: ri!woCrewData[ri!woIndex],
+                            index: "laborStartIndex",
+                            value: local!laborPagingInfo.startIndex + local!laborPagingInfo.batchSize
+                          )
+                        )
                       )
                     )
                   },
@@ -1807,14 +1872,39 @@ a!localVariables(
                   color: cons!ROME_TEXT_HEX_ORANGE,
                   disabled: local!equipmentPagingInfo.startIndex = 1,
                   saveInto: {
-                    a!save(
-                      local!equipmentPagingInfo,
-                      a!pagingInfo(
-                        startIndex: max(
-                          1,
-                          local!equipmentPagingInfo.startIndex - local!equipmentPagingInfo.batchSize
-                        ),
-                        batchSize: local!equipmentPagingInfo.batchSize
+                    if(
+                      ri!isWeekly,
+                      a!save(
+                        ri!weekCrewData,
+                        a!update(
+                          data: ri!weekCrewData,
+                          index: ri!selectedDay,
+                          value: a!update(
+                            data: ri!weekCrewData[ri!selectedDay],
+                            index: "woCrewData",
+                            value: updatearray(
+                              ri!weekCrewData[ri!selectedDay].woCrewData,
+                              ri!woIndex,
+                              a!update(
+                                data: ri!weekCrewData[ri!selectedDay].woCrewData[ri!woIndex],
+                                index: "equipmentStartIndex",
+                                value: max(1, local!equipmentPagingInfo.startIndex - local!equipmentPagingInfo.batchSize)
+                              )
+                            )
+                          )
+                        )
+                      ),
+                      a!save(
+                        ri!woCrewData,
+                        updatearray(
+                          ri!woCrewData,
+                          ri!woIndex,
+                          a!update(
+                            data: ri!woCrewData[ri!woIndex],
+                            index: "equipmentStartIndex",
+                            value: max(1, local!equipmentPagingInfo.startIndex - local!equipmentPagingInfo.batchSize)
+                          )
+                        )
                       )
                     )
                   }
@@ -1849,11 +1939,39 @@ a!localVariables(
                   color: cons!ROME_TEXT_HEX_ORANGE,
                   disabled: local!equipmentPagingInfo.startIndex + local!equipmentPagingInfo.batchSize > local!equipmentDataSubset.totalCount,
                   saveInto: {
-                    a!save(
-                      local!equipmentPagingInfo,
-                      a!pagingInfo(
-                        startIndex: local!equipmentPagingInfo.startIndex + local!equipmentPagingInfo.batchSize,
-                        batchSize: local!equipmentPagingInfo.batchSize
+                    if(
+                      ri!isWeekly,
+                      a!save(
+                        ri!weekCrewData,
+                        a!update(
+                          data: ri!weekCrewData,
+                          index: ri!selectedDay,
+                          value: a!update(
+                            data: ri!weekCrewData[ri!selectedDay],
+                            index: "woCrewData",
+                            value: updatearray(
+                              ri!weekCrewData[ri!selectedDay].woCrewData,
+                              ri!woIndex,
+                              a!update(
+                                data: ri!weekCrewData[ri!selectedDay].woCrewData[ri!woIndex],
+                                index: "equipmentStartIndex",
+                                value: local!equipmentPagingInfo.startIndex + local!equipmentPagingInfo.batchSize
+                              )
+                            )
+                          )
+                        )
+                      ),
+                      a!save(
+                        ri!woCrewData,
+                        updatearray(
+                          ri!woCrewData,
+                          ri!woIndex,
+                          a!update(
+                            data: ri!woCrewData[ri!woIndex],
+                            index: "equipmentStartIndex",
+                            value: local!equipmentPagingInfo.startIndex + local!equipmentPagingInfo.batchSize
+                          )
+                        )
                       )
                     )
                   }
