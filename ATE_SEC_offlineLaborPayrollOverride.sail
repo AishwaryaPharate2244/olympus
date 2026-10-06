@@ -26,6 +26,13 @@ a!localVariables(
     ri!woCrewData[ri!woIndex].labors[ri!laborIndex]
   ),
   local!hourTypes: index(local!poRow, "hourTypes", {}),
+  local!rateHourTypes: reject(
+    fn!isnull,
+    a!forEach(
+      items: local!hourTypes,
+      expression: if(a!isNullOrEmpty(index(fv!item, "hourTypeId", null)), null, fv!item)
+    )
+  ),
   local!poCategoryId: tointeger(
     index(local!poRow, "payrollConfigOverrideId", null)
   ),
@@ -212,12 +219,12 @@ a!localVariables(
                 )
               ),
               a!forEach(
-                items: enumerate(ceiling(count(local!hourTypes) / 2)),
+                items: enumerate(ceiling(count(local!rateHourTypes) / 2)),
                 expression: a!sideBySideLayout(
                   items: a!forEach(
                     items: { fv!item * 2 + 1, fv!item * 2 + 2 },
                     expression: if(
-                      fv!item > count(local!hourTypes),
+                      fv!item > count(local!rateHourTypes),
                       a!sideBySideItem(
                         width: "1X",
                         item: a!richTextDisplayField(labelPosition: "COLLAPSED", value: "")
@@ -226,13 +233,13 @@ a!localVariables(
                         local!htIdx: fv!item,
                         local!htId: tointeger(
                           index(
-                            local!hourTypes[local!htIdx],
+                            local!rateHourTypes[local!htIdx],
                             "hourTypeId",
                             null
                           )
                         ),
                         local!htRate: index(
-                          local!hourTypes[local!htIdx],
+                          local!rateHourTypes[local!htIdx],
                           "payrollOverrideRate",
                           null
                         ),
