@@ -1,34 +1,19 @@
-/*
-  ATE_SEC_offlineEquipmentPayrollOverride
-  Payroll Override section for one equipment row: a checkbox shows the category and rate; weekly view also offers "Copy from previous day".
-
-  Rule inputs:
-    payrollOverride  (Any Type)
-    brandingMap      (Any Type)
-    isWeekly         (Boolean)
-    selectedDay      (Integer)
-    weekCrewData     (Any Type)  saved into
-    woCrewData       (Any Type)  saved into
-    woIndex          (Integer)
-    equipmentIndex   (Integer)
-    woItem           (Any Type)
-*/
 a!localVariables(
-  local!epShow: a!defaultValue(index(ri!payrollOverride, "equipShowFields", false()), false()),
-  local!epCanCustomize: a!defaultValue(index(ri!payrollOverride, "equipCanCustomizeRate", false()), false()),
-  local!epOptions: a!defaultValue(index(ri!payrollOverride, "equipOptions", {}), {}),
-  local!epOptionIds: tointeger(index(local!epOptions, "id", {})),
-  local!epRow: if(
-    ri!isWeekly,
+  local!isWeekly: a!defaultValue(ri!isWeekly, false()),
+  local!showSection: a!defaultValue(index(ri!payrollOverride, "equipShowFields", false()), false()),
+  local!canCustomize: a!defaultValue(index(ri!payrollOverride, "equipCanCustomizeRate", false()), false()),
+  local!options: a!defaultValue(index(ri!payrollOverride, "equipOptions", {}), {}),
+  local!optionIds: tointeger(index(local!options, "id", {})),
+  local!equipment: if(
+    local!isWeekly,
     ri!weekCrewData[ri!selectedDay].woCrewData[ri!woIndex].equipments[ri!equipmentIndex],
     ri!woCrewData[ri!woIndex].equipments[ri!equipmentIndex]
   ),
-  local!epCategoryId: tointeger(
-    index(local!epRow, "payrollConfigOverrideId", null)
-  ),
-  local!epShowFields: a!isNotNullOrEmpty(local!epCategoryId),
-  local!epPreviousRow: if(
-    and(a!defaultValue(ri!isWeekly, false()), ri!selectedDay > 1),
+  local!categoryId: tointeger(index(local!equipment, "payrollConfigOverrideId", null)),
+  local!rate: index(local!equipment, "payrollOverrideRate", null),
+  local!showFields: a!isNotNullOrEmpty(local!categoryId),
+  local!previousDayEquipment: if(
+    and(local!isWeekly, ri!selectedDay > 1),
     rule!ATE_UTIL_offlineGetPreviousDayPayrollOverride(
       weekCrewData: ri!weekCrewData,
       selectedDay: ri!selectedDay,
@@ -38,22 +23,22 @@ a!localVariables(
     ),
     null
   ),
-  local!epCopyMessage: a!refreshVariable(value: null, refreshOnVarChange: ri!selectedDay),
-  local!epRate: index(local!epRow, "payrollOverrideRate", null),
+  local!copyMessage: a!refreshVariable(value: null, refreshOnVarChange: ri!selectedDay),
   a!sectionLayout(
     marginAbove: "STANDARD",
-    showWhen: local!epShow,
+    showWhen: local!showSection,
     contents: {
       a!checkboxField(
         labelPosition: "COLLAPSED",
         choiceLabels: { "Payroll Override" },
         choiceValues: { true() },
-        value: if(local!epShowFields, { true() }, {}),
-        saveInto: a!save(local!epShowFields, a!isNotNullOrEmpty(save!value))
+        value: if(local!showFields, { true() }, {}),
+        saveInto: a!save(local!showFields, a!isNotNullOrEmpty(save!value))
       ),
+      /* Weekly only: copy category and rate from the same equipment on the previous day */
       a!richTextDisplayField(
         labelPosition: "COLLAPSED",
-        showWhen: and(a!defaultValue(ri!isWeekly, false()), ri!selectedDay > 1),
+        showWhen: and(local!isWeekly, ri!selectedDay > 1),
         value: {
           a!richTextItem(
             text: { a!richTextIcon(icon: "copy"), " Copy from previous day" },
@@ -63,7 +48,8 @@ a!localVariables(
             linkStyle: "STANDALONE",
             link: a!dynamicLink(
               saveInto: if(
-                a!isNotNullOrEmpty(index(local!epPreviousRow, "payrollConfigOverrideId", null)),
+                a!isNullOrEmpty(index(local!previousDayEquipment, "payrollConfigOverrideId", null)),
+                a!save(local!copyMessage, "No previous day data"),
                 {
                   a!save(
                     ri!weekCrewData,
@@ -73,112 +59,96 @@ a!localVariables(
                       woIndex: ri!woIndex,
                       rowKey: "equipments",
                       rowIndex: ri!equipmentIndex,
-                      sourceRow: local!epPreviousRow
+                      sourceRow: local!previousDayEquipment
                     )
                   ),
-                  a!save(local!epCopyMessage, null)
-                },
-                a!save(local!epCopyMessage, "No previous day data")
+                  a!save(local!copyMessage, null)
+                }
               )
             )
           ),
           a!richTextItem(
-            text: "   " & local!epCopyMessage,
+            text: "   " & local!copyMessage,
             size: "SMALL",
             color: "SECONDARY",
             style: "EMPHASIS",
-            showWhen: a!isNotNullOrEmpty(local!epCopyMessage)
+            showWhen: a!isNotNullOrEmpty(local!copyMessage)
           )
         }
       ),
-      if(
-        local!epShowFields,
-        {
-          a!dropdownField(
-            label: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{3779d42f-c2b4-451f-a2a1-9c03215e1927}Payroll Override Category',
-            placeholder: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{f41a3d1a-7ae4-4053-9cff-d854c5601192}Select Category',
-            choiceLabels: index(local!epOptions, "name", {}),
-            choiceValues: local!epOptionIds,
-            value: if(
-              contains(local!epOptionIds, local!epCategoryId),
-              local!epCategoryId,
-              null
-            ),
-            saveInto: if(
-              ri!isWeekly,
-              a!save(
-                ri!weekCrewData,
-                rule!ATE_UTIL_offlineSetEquipmentPayrollRateOverrides(
-                  isWeekly: true(),
-                  weekCrewData: ri!weekCrewData,
-                  selectedDay: ri!selectedDay,
-                  woIndex: ri!woIndex,
-                  equipmentIndex: ri!equipmentIndex,
-                  categoryId: save!value,
-                  rate: displayvalue(tointeger(save!value), local!epOptionIds, index(local!epOptions, "rate", {}), null)
-                )
-              ),
-              a!save(
-                ri!woCrewData,
-                rule!ATE_UTIL_offlineSetEquipmentPayrollRateOverrides(
-                  isWeekly: false(),
-                  woCrewData: ri!woCrewData,
-                  woIndex: ri!woIndex,
-                  equipmentIndex: ri!equipmentIndex,
-                  categoryId: save!value,
-                  rate: displayvalue(tointeger(save!value), local!epOptionIds, index(local!epOptions, "rate", {}), null)
-                )
-              )
-            ),
-            required: false
+      a!dropdownField(
+        label: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{3779d42f-c2b4-451f-a2a1-9c03215e1927}Payroll Override Category',
+        placeholder: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{f41a3d1a-7ae4-4053-9cff-d854c5601192}Select Category',
+        choiceLabels: index(local!options, "name", {}),
+        choiceValues: local!optionIds,
+        value: if(contains(local!optionIds, local!categoryId), local!categoryId, null),
+        saveInto: if(
+          local!isWeekly,
+          a!save(
+            ri!weekCrewData,
+            rule!ATE_UTIL_offlineSetEquipmentPayrollRateOverrides(
+              isWeekly: true(),
+              weekCrewData: ri!weekCrewData,
+              selectedDay: ri!selectedDay,
+              woIndex: ri!woIndex,
+              equipmentIndex: ri!equipmentIndex,
+              categoryId: save!value,
+              rate: displayvalue(tointeger(save!value), local!optionIds, index(local!options, "rate", {}), null)
+            )
           ),
-          a!textField(
-            label: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{c191ec45-b3d6-4f9a-b056-52d50b4a0071}Payroll Override Rate',
-            placeholder: "0.00",
-            showWhen: local!epCanCustomize,
-            value: local!epRate,
-            refreshAfter: "UNFOCUS",
-            required: a!isNotNullOrEmpty(local!epCategoryId),
-            disabled: a!isNullOrEmpty(local!epCategoryId),
-            saveInto: {
-              if(
-                ri!isWeekly,
-                a!save(
-                  ri!weekCrewData,
-                  rule!ATE_UTIL_offlineSetEquipmentPayrollRateOverrides(
-                    isWeekly: true(),
-                    weekCrewData: ri!weekCrewData,
-                    selectedDay: ri!selectedDay,
-                    woIndex: ri!woIndex,
-                    equipmentIndex: ri!equipmentIndex,
-                    categoryId: local!epCategoryId,
-                    rate: save!value
-                  )
-                ),
-                a!save(
-                  ri!woCrewData,
-                  rule!ATE_UTIL_offlineSetEquipmentPayrollRateOverrides(
-                    isWeekly: false(),
-                    woCrewData: ri!woCrewData,
-                    woIndex: ri!woIndex,
-                    equipmentIndex: ri!equipmentIndex,
-                    categoryId: local!epCategoryId,
-                    rate: save!value
-                  )
-                )
-              )
-            },
-            validations: if(
-              and(
-                a!isNotNullOrEmpty(local!epRate),
-                todecimal(local!epRate) <= 0
-              ),
-              'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{70339712-a331-423b-be90-3cff450d2788}Rate must be greater than 0..',
-              {}
+          a!save(
+            ri!woCrewData,
+            rule!ATE_UTIL_offlineSetEquipmentPayrollRateOverrides(
+              isWeekly: false(),
+              woCrewData: ri!woCrewData,
+              woIndex: ri!woIndex,
+              equipmentIndex: ri!equipmentIndex,
+              categoryId: save!value,
+              rate: displayvalue(tointeger(save!value), local!optionIds, index(local!options, "rate", {}), null)
             )
           )
-        },
-        {}
+        ),
+        showWhen: local!showFields
+      ),
+      a!textField(
+        label: 'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{c191ec45-b3d6-4f9a-b056-52d50b4a0071}Payroll Override Rate',
+        placeholder: "0.00",
+        value: local!rate,
+        refreshAfter: "UNFOCUS",
+        required: a!isNotNullOrEmpty(local!categoryId),
+        disabled: a!isNullOrEmpty(local!categoryId),
+        saveInto: if(
+          local!isWeekly,
+          a!save(
+            ri!weekCrewData,
+            rule!ATE_UTIL_offlineSetEquipmentPayrollRateOverrides(
+              isWeekly: true(),
+              weekCrewData: ri!weekCrewData,
+              selectedDay: ri!selectedDay,
+              woIndex: ri!woIndex,
+              equipmentIndex: ri!equipmentIndex,
+              categoryId: local!categoryId,
+              rate: save!value
+            )
+          ),
+          a!save(
+            ri!woCrewData,
+            rule!ATE_UTIL_offlineSetEquipmentPayrollRateOverrides(
+              isWeekly: false(),
+              woCrewData: ri!woCrewData,
+              woIndex: ri!woIndex,
+              equipmentIndex: ri!equipmentIndex,
+              categoryId: local!categoryId,
+              rate: save!value
+            )
+          )
+        ),
+        validations: if(
+          and(a!isNotNullOrEmpty(local!rate), todecimal(local!rate) <= 0),
+          'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{70339712-a331-423b-be90-3cff450d2788}Rate must be greater than 0..',
+          {}
+        ),
+        showWhen: and(local!showFields, local!canCustomize)
       )
     }
   )

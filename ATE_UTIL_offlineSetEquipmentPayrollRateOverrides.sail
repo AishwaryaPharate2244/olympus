@@ -1,22 +1,20 @@
 a!localVariables(
-  local!wos: if(
-    a!defaultValue(ri!isWeekly, false()),
-    index(index(ri!weekCrewData, ri!selectedDay, {}), "woCrewData", {}),
-    ri!woCrewData
-  ),
+  local!isWeekly: a!defaultValue(ri!isWeekly, false()),
+  local!wos: if(local!isWeekly, index(index(ri!weekCrewData, ri!selectedDay, {}), "woCrewData", {}), ri!woCrewData),
   local!wo: index(local!wos, ri!woIndex, {}),
-  local!newWos: updatearray(
+  local!equipments: index(local!wo, "equipments", {}),
+  local!updatedWos: updatearray(
     local!wos,
     ri!woIndex,
     a!update(
       data: local!wo,
       index: "equipments",
       value: updatearray(
-        index(local!wo, "equipments", {}),
+        local!equipments,
         ri!equipmentIndex,
         a!update(
           data: a!update(
-            data: index(index(local!wo, "equipments", {}), ri!equipmentIndex, {}),
+            data: index(local!equipments, ri!equipmentIndex, {}),
             index: "payrollConfigOverrideId",
             value: tointeger(ri!categoryId)
           ),
@@ -26,13 +24,14 @@ a!localVariables(
       )
     )
   ),
+  /* Daily returns woCrewData, weekly returns weekCrewData with only the selected day changed */
   if(
-    a!defaultValue(ri!isWeekly, false()),
+    local!isWeekly,
     a!update(
       data: ri!weekCrewData,
       index: ri!selectedDay,
-      value: a!update(data: ri!weekCrewData[ri!selectedDay], index: "woCrewData", value: local!newWos)
+      value: a!update(data: ri!weekCrewData[ri!selectedDay], index: "woCrewData", value: local!updatedWos)
     ),
-    local!newWos
+    local!updatedWos
   )
 )

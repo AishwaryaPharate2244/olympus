@@ -1,24 +1,21 @@
 a!localVariables(
   local!wo: index(index(index(ri!weekCrewData, ri!selectedDay, {}), "woCrewData", {}), ri!woIndex, {}),
   local!row: index(index(local!wo, ri!rowKey, {}), ri!rowIndex, {}),
-  local!key: if(
+  /* Employees match on employeeId; equipment on equipmentId, or name when it has no id */
+  local!matchField: if(
     ri!rowKey = "labors",
     "employeeId",
-    if(
-      a!isNotNullOrEmpty(trim(tostring(index(local!row, "equipmentId", "")))),
-      "equipmentId",
-      "equipmentName"
-    )
+    if(a!isNullOrEmpty(trim(tostring(index(local!row, "equipmentId", "")))), "equipmentName", "equipmentId")
   ),
-  local!rowKeyValue: trim(tostring(index(local!row, local!key, ""))),
-  local!previousWos: index(index(ri!weekCrewData, ri!selectedDay - 1, {}), "woCrewData", {}),
-  local!previousRows: a!flatten(
+  local!matchValue: trim(tostring(index(local!row, local!matchField, ""))),
+  local!previousDayWos: index(index(ri!weekCrewData, ri!selectedDay - 1, {}), "woCrewData", {}),
+  local!previousDayRows: a!flatten(
     index(
       index(
-        local!previousWos,
+        local!previousDayWos,
         wherecontains(
           trim(tostring(index(local!wo, "workOrderNumber", ""))),
-          trim(touniformstring(index(local!previousWos, "workOrderNumber", {})))
+          trim(touniformstring(index(local!previousDayWos, "workOrderNumber", {})))
         ),
         {}
       ),
@@ -27,12 +24,12 @@ a!localVariables(
     )
   ),
   if(
-    or(ri!selectedDay <= 1, a!isNullOrEmpty(local!rowKeyValue)),
+    or(ri!selectedDay <= 1, a!isNullOrEmpty(local!matchValue)),
     null,
     index(
       index(
-        local!previousRows,
-        wherecontains(local!rowKeyValue, trim(touniformstring(index(local!previousRows, local!key, {})))),
+        local!previousDayRows,
+        wherecontains(local!matchValue, trim(touniformstring(index(local!previousDayRows, local!matchField, {})))),
         {}
       ),
       1,
