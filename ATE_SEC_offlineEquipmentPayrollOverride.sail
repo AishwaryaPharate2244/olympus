@@ -56,7 +56,7 @@ a!localVariables(
               ri!isWeekly,
               a!save(
                 ri!weekCrewData,
-                rule!ATE_UTIL_offlineSetEquipmentPayrollOverrides(
+                rule!ATE_UTIL_offlineSetEquipmentPayrollRateOverrides(
                   isWeekly: true(),
                   weekCrewData: ri!weekCrewData,
                   selectedDay: ri!selectedDay,
@@ -68,7 +68,7 @@ a!localVariables(
               ),
               a!save(
                 ri!woCrewData,
-                rule!ATE_UTIL_offlineSetEquipmentPayrollOverrides(
+                rule!ATE_UTIL_offlineSetEquipmentPayrollRateOverrides(
                   isWeekly: false(),
                   woCrewData: ri!woCrewData,
                   woIndex: ri!woIndex,
@@ -93,7 +93,7 @@ a!localVariables(
                 ri!isWeekly,
                 a!save(
                   ri!weekCrewData,
-                  rule!ATE_UTIL_offlineSetEquipmentPayrollOverrides(
+                  rule!ATE_UTIL_offlineSetEquipmentPayrollRateOverrides(
                     isWeekly: true(),
                     weekCrewData: ri!weekCrewData,
                     selectedDay: ri!selectedDay,
@@ -105,7 +105,7 @@ a!localVariables(
                 ),
                 a!save(
                   ri!woCrewData,
-                  rule!ATE_UTIL_offlineSetEquipmentPayrollOverrides(
+                  rule!ATE_UTIL_offlineSetEquipmentPayrollRateOverrides(
                     isWeekly: false(),
                     woCrewData: ri!woCrewData,
                     woIndex: ri!woIndex,
