@@ -1,6 +1,6 @@
 /*
   ATE_SEC_offlineEquipmentPayrollOverride
-  Payroll Override section for one equipment row: a checkbox shows the category and rate; weekly view also offers "Copy to following days".
+  Payroll Override section for one equipment row: a checkbox shows the category and rate; weekly view also offers "Copy from previous day".
 
   Rule inputs:
     payrollOverride  (Any Type)
@@ -27,6 +27,18 @@ a!localVariables(
     index(local!epRow, "payrollConfigOverrideId", null)
   ),
   local!epShowFields: a!isNotNullOrEmpty(local!epCategoryId),
+  local!epPreviousRow: if(
+    and(a!defaultValue(ri!isWeekly, false()), ri!selectedDay > 1),
+    rule!ATE_UTIL_offlineGetPreviousDayPayrollOverride(
+      weekCrewData: ri!weekCrewData,
+      selectedDay: ri!selectedDay,
+      woIndex: ri!woIndex,
+      rowKey: "equipments",
+      rowIndex: ri!equipmentIndex
+    ),
+    null
+  ),
+  local!epCopyMessage: a!refreshVariable(value: null, refreshOnVarChange: ri!selectedDay),
   local!epRate: index(local!epRow, "payrollOverrideRate", null),
   a!sectionLayout(
     marginAbove: "STANDARD",
@@ -38,6 +50,46 @@ a!localVariables(
         choiceValues: { true() },
         value: if(local!epShowFields, { true() }, {}),
         saveInto: a!save(local!epShowFields, a!isNotNullOrEmpty(save!value))
+      ),
+      a!richTextDisplayField(
+        labelPosition: "COLLAPSED",
+        showWhen: and(a!defaultValue(ri!isWeekly, false()), ri!selectedDay > 1),
+        value: {
+          a!richTextItem(
+            text: { a!richTextIcon(icon: "copy"), " Copy from previous day" },
+            style: "STRONG",
+            size: "SMALL",
+            color: cons!ROME_TEXT_HEX_ORANGE,
+            linkStyle: "STANDALONE",
+            link: a!dynamicLink(
+              saveInto: if(
+                a!isNotNullOrEmpty(index(local!epPreviousRow, "payrollConfigOverrideId", null)),
+                {
+                  a!save(
+                    ri!weekCrewData,
+                    rule!ATE_UTIL_offlineCopyPreviousDayPayrollOverride(
+                      weekCrewData: ri!weekCrewData,
+                      selectedDay: ri!selectedDay,
+                      woIndex: ri!woIndex,
+                      rowKey: "equipments",
+                      rowIndex: ri!equipmentIndex,
+                      sourceRow: local!epPreviousRow
+                    )
+                  ),
+                  a!save(local!epCopyMessage, null)
+                },
+                a!save(local!epCopyMessage, "No previous day data")
+              )
+            )
+          ),
+          a!richTextItem(
+            text: "   " & local!epCopyMessage,
+            size: "SMALL",
+            color: "SECONDARY",
+            style: "EMPHASIS",
+            showWhen: a!isNotNullOrEmpty(local!epCopyMessage)
+          )
+        }
       ),
       if(
         local!epShowFields,
@@ -123,33 +175,6 @@ a!localVariables(
               ),
               'translation!{5fa41cdb-bb96-404f-bee1-63b5d5dd00f7}ATE Translations.{70339712-a331-423b-be90-3cff450d2788}Rate must be greater than 0..',
               {}
-            )
-          ),
-          a!richTextDisplayField(
-            labelPosition: "COLLAPSED",
-            showWhen: and(
-              a!defaultValue(ri!isWeekly, false()),
-              ri!selectedDay < count(ri!weekCrewData),
-              a!isNotNullOrEmpty(local!epCategoryId)
-            ),
-            value: a!richTextItem(
-              text: { a!richTextIcon(icon: "copy"), " Copy to following days" },
-              style: "STRONG",
-              size: "SMALL",
-              color: cons!ROME_TEXT_HEX_ORANGE,
-              linkStyle: "STANDALONE",
-              link: a!dynamicLink(
-                saveInto: a!save(
-                  ri!weekCrewData,
-                  rule!ATE_UTIL_offlineCopyPayrollOverrideForward(
-                    weekCrewData: ri!weekCrewData,
-                    selectedDay: ri!selectedDay,
-                    woIndex: ri!woIndex,
-                    rowKey: "equipments",
-                    rowIndex: ri!equipmentIndex
-                  )
-                )
-              )
             )
           )
         },

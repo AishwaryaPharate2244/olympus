@@ -1,6 +1,6 @@
 /*
   ATE_SEC_offlineLaborPayrollOverride
-  Payroll Override section for one employee row: a checkbox shows the category and rates; weekly view also offers "Copy to following days".
+  Payroll Override section for one employee row: a checkbox shows the category and rates; weekly view also offers "Copy from previous day".
 
   Rule inputs:
     payrollOverride     (Any Type)
@@ -30,6 +30,18 @@ a!localVariables(
     index(local!poRow, "payrollConfigOverrideId", null)
   ),
   local!poShowFields: a!isNotNullOrEmpty(local!poCategoryId),
+  local!poPreviousRow: if(
+    and(a!defaultValue(ri!isWeekly, false()), ri!selectedDay > 1),
+    rule!ATE_UTIL_offlineGetPreviousDayPayrollOverride(
+      weekCrewData: ri!weekCrewData,
+      selectedDay: ri!selectedDay,
+      woIndex: ri!woIndex,
+      rowKey: "labors",
+      rowIndex: ri!laborIndex
+    ),
+    null
+  ),
+  local!poCopyMessage: a!refreshVariable(value: null, refreshOnVarChange: ri!selectedDay),
   local!poEmployeeRate: index(
     reject(
       a!isNullOrEmpty(_),
@@ -48,6 +60,46 @@ a!localVariables(
         choiceValues: { true() },
         value: if(local!poShowFields, { true() }, {}),
         saveInto: a!save(local!poShowFields, a!isNotNullOrEmpty(save!value))
+      ),
+      a!richTextDisplayField(
+        labelPosition: "COLLAPSED",
+        showWhen: and(a!defaultValue(ri!isWeekly, false()), ri!selectedDay > 1),
+        value: {
+          a!richTextItem(
+            text: { a!richTextIcon(icon: "copy"), " Copy from previous day" },
+            style: "STRONG",
+            size: "SMALL",
+            color: cons!ROME_TEXT_HEX_ORANGE,
+            linkStyle: "STANDALONE",
+            link: a!dynamicLink(
+              saveInto: if(
+                a!isNotNullOrEmpty(index(local!poPreviousRow, "payrollConfigOverrideId", null)),
+                {
+                  a!save(
+                    ri!weekCrewData,
+                    rule!ATE_UTIL_offlineCopyPreviousDayPayrollOverride(
+                      weekCrewData: ri!weekCrewData,
+                      selectedDay: ri!selectedDay,
+                      woIndex: ri!woIndex,
+                      rowKey: "labors",
+                      rowIndex: ri!laborIndex,
+                      sourceRow: local!poPreviousRow
+                    )
+                  ),
+                  a!save(local!poCopyMessage, null)
+                },
+                a!save(local!poCopyMessage, "No previous day data")
+              )
+            )
+          ),
+          a!richTextItem(
+            text: "   " & local!poCopyMessage,
+            size: "SMALL",
+            color: "SECONDARY",
+            style: "EMPHASIS",
+            showWhen: a!isNotNullOrEmpty(local!poCopyMessage)
+          )
+        }
       ),
       if(
         local!poShowFields,
@@ -295,33 +347,6 @@ a!localVariables(
               )
             },
             {}
-          ),
-          a!richTextDisplayField(
-            labelPosition: "COLLAPSED",
-            showWhen: and(
-              a!defaultValue(ri!isWeekly, false()),
-              ri!selectedDay < count(ri!weekCrewData),
-              a!isNotNullOrEmpty(local!poCategoryId)
-            ),
-            value: a!richTextItem(
-              text: { a!richTextIcon(icon: "copy"), " Copy to following days" },
-              style: "STRONG",
-              size: "SMALL",
-              color: cons!ROME_TEXT_HEX_ORANGE,
-              linkStyle: "STANDALONE",
-              link: a!dynamicLink(
-                saveInto: a!save(
-                  ri!weekCrewData,
-                  rule!ATE_UTIL_offlineCopyPayrollOverrideForward(
-                    weekCrewData: ri!weekCrewData,
-                    selectedDay: ri!selectedDay,
-                    woIndex: ri!woIndex,
-                    rowKey: "labors",
-                    rowIndex: ri!laborIndex
-                  )
-                )
-              )
-            )
           )
         },
         {}
