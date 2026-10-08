@@ -527,7 +527,7 @@ if(
           )
         ),
         local!documents: a!forEach(
-          a!flatten(local!currentWOData.photoDocId),
+          union(reject(a!isNullOrEmpty(_), a!flatten(local!currentWOData.photoDocId)), a!flatten(local!currentWOData.photoDocId)[{}]),
           'recordType!{327af341-68c8-4de1-aae2-dbe1b07c156c}ROME Document'(
             'recordType!{327af341-68c8-4de1-aae2-dbe1b07c156c}ROME Document.fields.{8ce757bb-2ae5-4731-9e04-7ee608cf4e91}apnDocId': fv!item,
             'recordType!{327af341-68c8-4de1-aae2-dbe1b07c156c}ROME Document.fields.{4ca40acc-8d1c-4bd8-a8a0-1cd9cbaad89b}woNumber': local!currentWoNumber,
@@ -538,7 +538,7 @@ if(
           )
         ),
         local!comment: a!forEach(
-          local!currentWOData.timesheetComments,
+          union(reject(a!isNullOrEmpty(_), touniformstring(a!flatten(local!currentWOData.timesheetComments))), touniformstring({})),
           'recordType!{7aeeb109-f78e-43c3-b166-6b73791f2df6}ROME Comment'(
             'recordType!{7aeeb109-f78e-43c3-b166-6b73791f2df6}ROME Comment.fields.{aa098d1c-4c81-49b7-addf-98dad0fa141f}comment': fv!item,
             'recordType!{7aeeb109-f78e-43c3-b166-6b73791f2df6}ROME Comment.fields.{b3988865-04ca-43d1-99ca-362c15738c27}createdBy': local!loggedInUser,
