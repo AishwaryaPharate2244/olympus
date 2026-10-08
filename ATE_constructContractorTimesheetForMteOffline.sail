@@ -455,8 +455,8 @@ if(
                               value: index(local!hours, "hours", 0),
                               default: 0
                             ),
-                            'recordType!{ce20694f-0d07-4c02-817d-da7b15378ed6}ROME Labor Time Entry.fields.{0b251f72-4b8d-4bbd-8dc6-3df618756c28}payrollConfigOverrideId': tointeger(index(index(local!currentLabor, "payrollConfigOverrideId", {}), 1, null)),
-                            'recordType!{ce20694f-0d07-4c02-817d-da7b15378ed6}ROME Labor Time Entry.fields.{2121f43d-b931-49a6-af2b-86e69ddc1b26}payrollOverrideRate': todecimal(index(index(local!hours, "payrollOverrideRate", {}), 1, null)),
+                            'recordType!{ce20694f-0d07-4c02-817d-da7b15378ed6}ROME Labor Time Entry.fields.{0b251f72-4b8d-4bbd-8dc6-3df618756c28}payrollConfigOverrideId': tointeger(index(reject(a!isNullOrEmpty(_), index(index(local!allLabors, "payrollConfigOverrideId", {}), wherecontains(tostring(local!psuser), touniformstring(index(local!allLabors, "employeeId", {}))), {})), 1, null)),
+                            'recordType!{ce20694f-0d07-4c02-817d-da7b15378ed6}ROME Labor Time Entry.fields.{2121f43d-b931-49a6-af2b-86e69ddc1b26}payrollOverrideRate': todecimal(index(reject(a!isNullOrEmpty(_), index(index(a!flatten(local!hourtypes), wherecontains(tointeger(local!hourTypeId), tointeger(index(a!flatten(local!hourtypes), "hourTypeId", {}))), {}), "payrollOverrideRate", {})), 1, null)),
                             'recordType!{ce20694f-0d07-4c02-817d-da7b15378ed6}ROME Labor Time Entry.fields.{bf7d8364-433d-45d5-9d50-2106c5df5fb2}workOrder': local!currentWoNumber,
                             'recordType!{ce20694f-0d07-4c02-817d-da7b15378ed6}ROME Labor Time Entry.fields.{182dc670-a338-418c-a41a-89adf57b6e56}createdOn': local!currentDateTime,
                             'recordType!{ce20694f-0d07-4c02-817d-da7b15378ed6}ROME Labor Time Entry.fields.{c293f485-337a-4e43-8341-e34aacb1ccb8}createdBy': local!loggedInUser,
@@ -512,8 +512,8 @@ if(
                         value: index(local!thisEquipment, "hours", 0),
                         default: 0
                       ),
-                      'recordType!{8a3b50a6-b833-4378-b8e9-d35550abfe12}ROME Equipment Time Entry.fields.{3ff35a09-9e56-4185-bc6c-8dfe267e29a2}payrollOverrideConfigId': tointeger(index(index(local!thisEquipment, "payrollConfigOverrideId", {}), 1, null)),
-                      'recordType!{8a3b50a6-b833-4378-b8e9-d35550abfe12}ROME Equipment Time Entry.fields.{1059d649-13a1-4f2f-8a6c-6ad3f01d6f44}overrideRate': todecimal(index(index(local!thisEquipment, "payrollOverrideRate", {}), 1, null)),
+                      'recordType!{8a3b50a6-b833-4378-b8e9-d35550abfe12}ROME Equipment Time Entry.fields.{3ff35a09-9e56-4185-bc6c-8dfe267e29a2}payrollOverrideConfigId': tointeger(index(reject(a!isNullOrEmpty(_), index(index(local!allEquipments, "payrollConfigOverrideId", {}), wherecontains(tostring(local!currentEquipmentId), touniformstring(index(local!allEquipments, "equipmentId", {}))), {})), 1, null)),
+                      'recordType!{8a3b50a6-b833-4378-b8e9-d35550abfe12}ROME Equipment Time Entry.fields.{1059d649-13a1-4f2f-8a6c-6ad3f01d6f44}overrideRate': todecimal(index(reject(a!isNullOrEmpty(_), index(index(local!allEquipments, "payrollOverrideRate", {}), wherecontains(tostring(local!currentEquipmentId), touniformstring(index(local!allEquipments, "equipmentId", {}))), {})), 1, null)),
                       'recordType!{8a3b50a6-b833-4378-b8e9-d35550abfe12}ROME Equipment Time Entry.fields.{b671717e-3cd7-40bb-9c9a-2bebda539c3b}createdOn': local!currentDateTime,
                       'recordType!{8a3b50a6-b833-4378-b8e9-d35550abfe12}ROME Equipment Time Entry.fields.{566b0f1e-a96e-4ca7-986a-821bee2be66b}createdBy': local!loggedInUser,
                       'recordType!{8a3b50a6-b833-4378-b8e9-d35550abfe12}ROME Equipment Time Entry.fields.{b531370a-9833-46a9-8fb6-0fa2262de763}modifiedOn': local!currentDateTime,
